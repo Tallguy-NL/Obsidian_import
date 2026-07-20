@@ -9,9 +9,9 @@
     "dev": "ELECTRON_ENABLE_LOGGING=1 electron .",
     "rebuild": "electron-rebuild -f -w better-sqlite3,@napi-rs/canvas",
     "pack": "electron-builder --dir",
-    "dist": "electron-builder",
-    "dist:mac": "electron-builder --mac",
-    "dist:win": "electron-builder --win"
+    "dist": "electron-builder --publish=never",
+    "dist:mac": "electron-builder --mac --publish=never",
+    "dist:win": "electron-builder --win --publish=never"
   },
   "author": "Jeroen Gruppen",
   "license": "UNLICENSED",
