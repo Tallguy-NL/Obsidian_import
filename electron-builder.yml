@@ -25,11 +25,12 @@ icon: resources/icons/icon.png
 
 mac:
   category: public.app-category.productivity
+  # Only Apple Silicon machines run this app (MacBook + Mac mini, both arm64) — no x64 target.
   target:
     - target: dmg
-      arch: [arm64, x64]
+      arch: [arm64]
     - target: zip
-      arch: [arm64, x64]
+      arch: [arm64]
   hardenedRuntime: true
   gatekeeperAssess: false
   # Signing/notarization are opt-in: they need a Developer ID Application certificate and an
