@@ -171,18 +171,31 @@ function updateSettings(partial) {
 // never be more than `processed` and is useless as a real vault-wide total. The Hero page's
 // "Total" instead has to be processed + however many still-untouched attachments findBacklog
 // (the same scan the worker itself uses to find backfill work) turns up right now. That scan
-// walks every note in the vault, which is real work for large vaults — cached briefly here so
-// polling this every 30s (plus on every statsChanged event) doesn't re-walk the filesystem
-// each time.
-const BACKLOG_COUNT_CACHE_TTL_MS = 60_000;
-const backlogCountCache = new Map(); // vaultId -> { count, atMs }
+// walks every note in the vault, which is real work for large vaults, so it's cached briefly.
+//
+// Critically, `total`, `processed` and `addedThisWeek` are cached and refreshed *together* as
+// one snapshot — not backlogCount cached separately and then added to a freshly-queried
+// `processed`. Mixing a live `processed` with a stale backlog count double-counts every
+// document processed since the last scan (it's already reflected in the fresher `processed`,
+// but hasn't dropped out of the stale backlog number yet), making `total` visibly climb in
+// lockstep with `processed` instead of staying put. Snapshotting all three together avoids that.
+const STATS_CACHE_TTL_MS = 60_000;
+const statsCache = new Map(); // vaultId -> { total, processed, addedThisWeek, atMs }
 
-async function getCachedBacklogCount(vault) {
-  const cached = backlogCountCache.get(vault.id);
-  if (cached && Date.now() - cached.atMs < BACKLOG_COUNT_CACHE_TTL_MS) return cached.count;
+async function getCachedVaultStats(database, vault, weekStartUtc) {
+  const cached = statsCache.get(vault.id);
+  if (cached && Date.now() - cached.atMs < STATS_CACHE_TTL_MS) return cached;
+
+  const processed = database
+    .prepare('SELECT COUNT(*) AS c FROM documents WHERE vault_id = ? AND status_code != 0')
+    .get(vault.id).c;
+  const addedThisWeek = database
+    .prepare('SELECT COUNT(*) AS c FROM documents WHERE vault_id = ? AND discovered_at_utc >= ?')
+    .get(vault.id, weekStartUtc).c;
   const backlog = await findBacklog(vault);
-  backlogCountCache.set(vault.id, { count: backlog.length, atMs: Date.now() });
-  return backlog.length;
+  const stats = { total: processed + backlog.length, processed, addedThisWeek, atMs: Date.now() };
+  statsCache.set(vault.id, stats);
+  return stats;
 }
 
 async function getStats() {
@@ -191,14 +204,7 @@ async function getStats() {
   const weekStartUtc = startOfLocalWeekUtcIso(settings.timezone);
   const vaults = await Promise.all(
     listVaults().map(async (vault) => {
-      const processed = database
-        .prepare('SELECT COUNT(*) AS c FROM documents WHERE vault_id = ? AND status_code != 0')
-        .get(vault.id).c;
-      const addedThisWeek = database
-        .prepare('SELECT COUNT(*) AS c FROM documents WHERE vault_id = ? AND discovered_at_utc >= ?')
-        .get(vault.id, weekStartUtc).c;
-      const backlogCount = await getCachedBacklogCount(vault);
-      const total = processed + backlogCount;
+      const { total, processed, addedThisWeek } = await getCachedVaultStats(database, vault, weekStartUtc);
       return { vaultId: vault.id, name: vault.name, total, processed, addedThisWeek };
     })
   );
@@ -277,7 +283,7 @@ async function applyImport(filePath, resolutions = {}) {
     }
   }
 
-  backlogCountCache.clear(); // stale entries would be keyed by vault ids from the old database
+  statsCache.clear(); // stale entries would be keyed by vault ids from the old database
   return { backupPath, vaults: listVaults() };
 }
 

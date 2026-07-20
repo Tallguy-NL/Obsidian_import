@@ -25,6 +25,12 @@ function getOcrWorker() {
       langPath: hasBundledTessdata ? BUNDLED_TESSDATA_DIR : undefined,
       cachePath: TESSDATA_CACHE_DIR,
       gzip: true,
+      // Without this, tesseract.js's internal message handler both rejects the failed job's
+      // promise (which our callers' try/catch already handles) AND, redundantly, throws
+      // synchronously inside that handler — uncatchable from our side since it's outside our
+      // call stack, crashing the whole worker utilityProcess. A no-op errorHandler suppresses
+      // that second throw; the promise rejection alone is enough for callers to see the failure.
+      errorHandler: (err) => console.error('[ocrEngine] tesseract worker reported an error:', err),
     });
   }
   return workerPromise;

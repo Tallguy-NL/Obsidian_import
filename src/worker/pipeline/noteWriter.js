@@ -29,12 +29,23 @@ function formatExtractedTextCallout(text) {
 }
 
 async function readNoteIfExists(notePath) {
+  let raw;
   try {
-    const raw = await fs.promises.readFile(notePath, 'utf8');
-    return matter(raw);
+    raw = await fs.promises.readFile(notePath, 'utf8');
   } catch (err) {
     if (err.code === 'ENOENT') return null;
     throw err;
+  }
+  try {
+    return matter(raw);
+  } catch (err) {
+    // Malformed frontmatter (e.g. an unescaped colon-heavy URL in a `source:` value) would
+    // otherwise crash a new import that happens to land on this same filename. Treat it as a
+    // foreign note with no parseable frontmatter — data.source won't be 'import', so callers
+    // fall into the "different pre-existing note" append path instead of trying to merge into
+    // frontmatter that couldn't be parsed in the first place.
+    console.error(`[noteWriter] unparseable frontmatter, treating as foreign note: ${notePath}: ${err.message}`);
+    return { data: {}, content: raw };
   }
 }
 

@@ -1,11 +1,23 @@
 const fs = require('fs');
 const path = require('path');
-const { createCanvas } = require('@napi-rs/canvas');
+const napiCanvas = require('@napi-rs/canvas');
+const { createCanvas } = napiCanvas;
 const { ocrImage } = require('./ocrEngine');
 const { MIN_TEXT_LAYER_CHARS } = require('../../shared/constants');
 
 const MAX_OCR_FALLBACK_PAGES = 5; // bound OCR cost for large scanned PDFs
 const RENDER_SCALE = 2; // ~144dpi-ish for a 72dpi base viewport, good enough for OCR
+
+// pdf.js self-polyfills these DOM globals from the `canvas` package, but only inside an
+// `isNodeJS` guard that (like the CMap/Font/Filter/Canvas factories above) requires
+// `process.type === "browser"` when `process.versions.electron` is set — false for this
+// worker's utilityProcess, so pdf.js thinks it's *not* in Node and skips the polyfill
+// entirely. Rendering a page that touches image compositing (e.g. `putBinaryImageData`) then
+// references the bare `ImageData`/`Path2D`/`DOMMatrix` globals directly and throws
+// "X is not defined". Setting them ourselves sidesteps pdf.js's broken environment detection.
+if (!globalThis.ImageData) globalThis.ImageData = napiCanvas.ImageData;
+if (!globalThis.Path2D) globalThis.Path2D = napiCanvas.Path2D;
+if (!globalThis.DOMMatrix) globalThis.DOMMatrix = napiCanvas.DOMMatrix;
 
 // Bundled cmaps/standard fonts (vendored from node_modules/pdfjs-dist, see resources/pdfjs/).
 // Without these, PDFs whose embedded fonts use a non-Identity encoding (common for CJK, and

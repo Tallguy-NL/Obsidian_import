@@ -50,6 +50,32 @@ async function buildAttachmentIndex(vaultRootPath) {
   return index;
 }
 
+async function fileExists(filePath) {
+  try {
+    await fs.promises.access(filePath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// Some vaults (e.g. Evernote exports) embed attachments via a relative path into a per-note
+// resources folder — `![[./_resources/Some Note.resources/unknown_filename.3.jpeg]]` — rather
+// than a bare filename. `attachmentIndex` is keyed by basename only, so a relative-path embed
+// name never matches it directly (looks unresolvable even though the file is right there), and
+// these exporters commonly reuse generic basenames (e.g. "unknown_filename.png") across many
+// different notes' resource folders, so falling back to the basename index for a path-shaped
+// embed would risk silently resolving to a *different* note's attachment. A path-shaped embed
+// is therefore resolved relative to the note itself, and only a bare-filename embed uses the
+// vault-wide basename index.
+async function resolveEmbedPath(notePath, embedName, attachmentIndex) {
+  if (embedName.includes('/')) {
+    const relPath = path.resolve(path.dirname(notePath), embedName);
+    return (await fileExists(relPath)) ? relPath : null;
+  }
+  return attachmentIndex.get(embedName) || null;
+}
+
 /**
  * Finds attachments embedded in existing notes that don't yet have a corresponding `ID:` line
  * — files added to the vault outside this app (or before it existed) that still need text
@@ -63,7 +89,18 @@ async function findBacklog(vault) {
   for (const notePath of noteFiles) {
     const raw = await fs.promises.readFile(notePath, 'utf8').catch(() => null);
     if (!raw) continue;
-    const parsed = matter(raw);
+    let parsed;
+    try {
+      parsed = matter(raw);
+    } catch (err) {
+      // Malformed frontmatter (e.g. an unescaped colon-heavy URL in a `source:` value from an
+      // Evernote-style export) would otherwise throw here and, uncaught, take down the whole
+      // scan — killing getStats() for every vault and wedging the worker's tick loop on this
+      // one file forever. Skip just this note instead; vaultAnalyzer.js's tag scan already
+      // treats malformed frontmatter the same way.
+      console.error(`[findBacklog] skipping note with unparseable frontmatter: ${notePath}: ${err.message}`);
+      continue;
+    }
     const embedded = extractEmbeddedFileNames(parsed.content);
     if (embedded.size === 0) continue;
     const { guids: idGuids, fileNames: idFileNames } = extractIdLineInfo(parsed.content);
@@ -75,7 +112,7 @@ async function findBacklog(vault) {
       const embedGuid = guidFromEmbedFileName(embedName);
       const alreadyTracked = embedGuid ? idGuids.has(embedGuid) : idFileNames.has(embedName);
       if (alreadyTracked) continue;
-      const resolvedPath = attachmentIndex.get(embedName);
+      const resolvedPath = await resolveEmbedPath(notePath, embedName, attachmentIndex);
       if (!resolvedPath) continue; // broken/unresolvable link — nothing to extract from
       backlog.push({ notePath, embedFileName: embedName, resolvedPath });
     }
