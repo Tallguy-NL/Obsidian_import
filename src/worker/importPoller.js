@@ -53,7 +53,12 @@ async function processOneFile({ vault, fileName, groupKey, imageTypesEnabled, kn
   const sourcePath = path.join(vault.import_folder_path, fileName);
 
   const existingDoc = db.findDocumentByPath(vault.id, sourcePath);
-  if (existingDoc && existingDoc.status_code !== STATUS.PENDING) {
+  // A previously-FAILED (400) file falls through to a real retry below instead of being
+  // skipped forever, same as backfillScanner.js does for existing-vault attachments — a fix
+  // that no longer applies (e.g. the ImageData polyfill in pdfExtractor.js) should actually
+  // get picked up on the next poll rather than leaving the file stuck silently in the import
+  // folder forever.
+  if (existingDoc && existingDoc.status_code !== STATUS.PENDING && existingDoc.status_code !== STATUS.NOT_PROCESSED) {
     return { skipped: true };
   }
   const guid = existingDoc ? existingDoc.guid : generateGuid();
@@ -115,7 +120,12 @@ async function processOneFile({ vault, fileName, groupKey, imageTypesEnabled, kn
 
     return { skipped: false, statusCode };
   } catch (err) {
-    await moveToErrors(vault.import_folder_path, sourcePath, fileName).catch(() => {});
+    await moveToErrors(vault.import_folder_path, sourcePath, fileName).catch((moveErr) => {
+      // Left in place (not silently swallowed) so a file that fails to move into errors/
+      // isn't left both unprocessed and undiagnosable — it'll be retried on the next poll
+      // instead (see the status_code check above), but this makes the underlying cause visible.
+      console.error(`[importPoller] failed to move ${fileName} to errors/:`, moveErr);
+    });
     db.markDocumentProcessed(doc.id, {
       statusCode: STATUS.NOT_PROCESSED,
       errorMessage: String(err && err.message || err),

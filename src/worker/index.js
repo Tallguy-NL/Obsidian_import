@@ -11,7 +11,6 @@ const { analyzeVaultTags } = require('./vaultAnalyzer');
 const { findBacklog, processBacklogItem, runBackfillForVault } = require('./backfillScanner');
 const { sweepOrphansForVault } = require('./orphanSweeper');
 
-let lastImportPollAtMs = 0;
 let tickInFlight = false;
 const backfillQueues = new Map(); // vaultId -> cached pending backlog items
 let backfillVaultCursor = 0;
@@ -73,16 +72,20 @@ async function tick() {
     }
     if (orphansDeleted) postEvent({ type: 'statsChanged', reason: 'orphan-sweep' });
 
-    if (Date.now() - lastImportPollAtMs >= settings.importPollIntervalSeconds * 1000) {
-      lastImportPollAtMs = Date.now();
-      const results = await pollAllVaults();
-      const totalProcessed = results.reduce((sum, r) => sum + r.processed, 0);
-      if (totalProcessed > 0) postEvent({ type: 'statsChanged', reason: 'import-poll' });
-    }
+    // Checked every tick (a no-op readdir per vault when the import folder is empty), rather
+    // than gated behind importPollIntervalSeconds, so new documents are never left waiting
+    // behind existing-vault backfill work that happened to already be running.
+    const importResults = await pollAllVaults();
+    const totalImported = importResults.reduce((sum, r) => sum + r.processed, 0);
+    if (totalImported > 0) postEvent({ type: 'statsChanged', reason: 'import-poll' });
 
-    const backfillResults = await processBackfillBatchAcrossVaults(vaults, settings);
-    if (backfillResults.some((r) => !r.skipped)) {
-      postEvent({ type: 'statsChanged', reason: 'backfill' });
+    // New documents always take priority over the existing-vault backlog: only spend this
+    // tick on backfill once the import folders had nothing left to process.
+    if (totalImported === 0) {
+      const backfillResults = await processBackfillBatchAcrossVaults(vaults, settings);
+      if (backfillResults.some((r) => !r.skipped)) {
+        postEvent({ type: 'statsChanged', reason: 'backfill' });
+      }
     }
   } catch (err) {
     console.error('[worker] tick failed:', err);
