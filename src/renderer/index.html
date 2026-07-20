@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Obsidian Importer</title>
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; script-src 'self'" />
+  <link rel="stylesheet" href="css/fonts.css" />
+  <link rel="stylesheet" href="css/theme.css" />
+</head>
+<body>
+  <nav class="navbar">
+    <a class="navbar-brand" href="index.html">Obsidian <span class="accent">Importer</span></a>
+    <div class="navbar-actions">
+      <a class="btn btn-outline" href="settings.html">Settings</a>
+    </div>
+  </nav>
+
+  <main class="page">
+    <div class="hero-header">
+      <div class="hero-heading-group">
+        <span class="eyebrow">Overview</span>
+        <h1>Your vaults</h1>
+        <div class="status-row">
+          <span id="pulseDot" class="pulse-dot"></span>
+          <span id="statusLabel" class="status-label">Checking status…</span>
+        </div>
+      </div>
+      <button id="pauseResumeBtn" class="btn btn-primary">…</button>
+    </div>
+
+    <div id="vaultCards" class="vault-grid">
+      <p class="muted">Loading vaults…</p>
+    </div>
+  </main>
+
+  <script src="js/hero.js"></script>
+</body>
+</html>

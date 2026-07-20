@@ -1,0 +1,66 @@
+appId: nl.tallguyonline.obsidian-importer
+productName: Obsidian Importer
+copyright: Copyright © 2026
+
+directories:
+  output: dist
+  buildResources: resources
+
+files:
+  - src/**/*
+  - db/**/*
+  - "!**/*.map"
+
+extraResources:
+  - from: resources/tessdata
+    to: tessdata
+    filter: ["**/*"]
+  - from: resources/pdfjs
+    to: pdfjs
+    filter: ["**/*"]
+
+# Single source icon (1024x1024 PNG) — electron-builder derives .icns (mac), .ico (win) and
+# the Linux icon set from it automatically, so no manual iconutil/ImageMagick step is needed.
+icon: resources/icons/icon.png
+
+mac:
+  category: public.app-category.productivity
+  target:
+    - target: dmg
+      arch: [arm64, x64]
+    - target: zip
+      arch: [arm64, x64]
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  # Signing/notarization are opt-in: they need a Developer ID Application certificate and an
+  # Apple ID app-specific password/API key, neither of which belong in this repo. electron-builder
+  # picks these up from env vars (CSC_LINK/CSC_KEY_PASSWORD, APPLE_ID/APPLE_APP_SPECIFIC_PASSWORD
+  # or APPLE_API_KEY) when present; unset, it just produces an unsigned build (fine for local use
+  # via right-click → Open, but will show a Gatekeeper warning and can't auto-update).
+  identity: null
+
+dmg:
+  contents:
+    - x: 130
+      y: 220
+    - x: 410
+      y: 220
+      type: link
+      path: /Applications
+
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+# Windows code signing is likewise opt-in via env vars (CSC_LINK/CSC_KEY_PASSWORD or an Azure
+# Trusted Signing config) picked up automatically by electron-builder when present.
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+
+# better-sqlite3 and @napi-rs/canvas are native modules; electron-builder rebuilds them against
+# Electron's ABI for the target platform/arch automatically during `npm run dist`.
+npmRebuild: true

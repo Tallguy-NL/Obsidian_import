@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Settings — Obsidian Importer</title>
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; script-src 'self'" />
+  <link rel="stylesheet" href="css/fonts.css" />
+  <link rel="stylesheet" href="css/theme.css" />
+</head>
+<body>
+  <nav class="navbar">
+    <a class="navbar-brand" href="index.html">Obsidian <span class="accent">Importer</span></a>
+    <div class="navbar-actions">
+      <a class="btn btn-outline" href="index.html">Main menu</a>
+    </div>
+  </nav>
+
+  <main class="page">
+    <span class="eyebrow">Configuration</span>
+    <h1 style="margin-bottom:24px;">Settings</h1>
+
+    <section class="settings-section">
+      <span class="eyebrow">01 · Vaults</span>
+      <h2>Obsidian vaults</h2>
+      <p class="muted">Browse to the folder that contains your Obsidian vaults as subfolders, then pick which ones this app should manage.</p>
+      <button id="browseParentBtn" class="btn btn-outline">Browse for vaults folder…</button>
+      <div id="parentPathLabel" class="muted" style="margin-top:8px;"></div>
+      <div id="subfolderPicker" style="margin-top:12px;"></div>
+      <div id="vaultError"></div>
+
+      <h3 style="margin-top:24px; font-size:14px;">Configured vaults</h3>
+      <div id="vaultList" class="vault-list"></div>
+    </section>
+
+    <section class="settings-section">
+      <span class="eyebrow">02 · Analysis</span>
+      <h2>Analyze existing vaults</h2>
+      <p class="muted">Extract text from existing attachments and refresh the known-tag list for a vault. Runs in the background, one document at a time.</p>
+      <div id="analyzeVaultPicker"></div>
+    </section>
+
+    <section class="settings-section">
+      <span class="eyebrow">03 · Time zone</span>
+      <h2>Display time zone</h2>
+      <select id="timezoneSelect"></select>
+    </section>
+
+    <section class="settings-section">
+      <span class="eyebrow">04 · Schedule</span>
+      <h2>Background time slot</h2>
+      <p class="muted">Days and hours during which the background process is allowed to run.</p>
+      <div class="day-picker" id="dayPicker"></div>
+      <div class="field-row" style="margin-top:12px; max-width:320px;">
+        <div>
+          <label for="startTime">Start</label>
+          <input type="time" id="startTime" />
+        </div>
+        <div>
+          <label for="endTime">Finish</label>
+          <input type="time" id="endTime" />
+        </div>
+      </div>
+    </section>
+
+    <section class="settings-section">
+      <span class="eyebrow">05 · Image types</span>
+      <h2>Formats to run OCR on</h2>
+      <div id="imageTypePicker"></div>
+    </section>
+
+    <section class="settings-section">
+      <span class="eyebrow">06 · Backup &amp; migration</span>
+      <h2>Move to another machine</h2>
+      <p class="muted">Export this app's database to move it to a new machine, or import one exported elsewhere. Importing replaces everything currently in this app — a backup of what's here now is kept automatically first.</p>
+      <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        <button id="exportDbBtn" class="btn btn-outline">Export database…</button>
+        <button id="importDbBtn" class="btn btn-outline">Import database…</button>
+      </div>
+      <div id="migrationStatus" class="muted" style="margin-top:8px;"></div>
+      <div id="importResolution" style="margin-top:16px;"></div>
+    </section>
+
+    <button id="saveSettingsBtn" class="btn btn-primary">Save settings</button>
+    <span id="saveStatus" class="muted" style="margin-left:12px;"></span>
+  </main>
+
+  <script src="js/settings.js"></script>
+</body>
+</html>

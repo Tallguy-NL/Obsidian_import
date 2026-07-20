@@ -1,0 +1,15 @@
+node_modules/
+dist/
+out/
+*.log
+.DS_Store
+app.db
+app.db-shm
+app.db-wal
+
+# Planning docs, not app source
+claude_plan.md
+functional_design.md
+
+# Claude Code local session/config state, not app source
+.claude/

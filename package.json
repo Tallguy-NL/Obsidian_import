@@ -1,0 +1,33 @@
+{
+  "name": "obsidian-importer",
+  "version": "0.1.0",
+  "description": "Background importer that ingests documents into an Obsidian vault, extracts text via OCR, and auto-tags notes.",
+  "main": "src/main/index.js",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "dev": "ELECTRON_ENABLE_LOGGING=1 electron .",
+    "rebuild": "electron-rebuild -f -w better-sqlite3,@napi-rs/canvas",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder",
+    "dist:mac": "electron-builder --mac",
+    "dist:win": "electron-builder --win"
+  },
+  "author": "Jeroen Gruppen",
+  "license": "UNLICENSED",
+  "devDependencies": {
+    "@electron/rebuild": "^3.6.0",
+    "@fontsource/manrope": "^5.2.8",
+    "electron": "^31.0.0",
+    "electron-builder": "^24.13.3"
+  },
+  "dependencies": {
+    "@napi-rs/canvas": "^0.1.53",
+    "better-sqlite3": "^11.1.2",
+    "gray-matter": "^4.0.3",
+    "heic-convert": "^2.1.0",
+    "luxon": "^3.4.4",
+    "pdfjs-dist": "^4.4.168",
+    "tesseract.js": "^5.1.0"
+  }
+}
