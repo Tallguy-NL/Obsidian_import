@@ -23,7 +23,11 @@
 html, body {
   height: 100%;
   margin: 0;
-  font-family: 'Manrope', 'Segoe UI', Arial, sans-serif;
+  /* Same interface font stack Obsidian itself uses (its --font-default), so the app reads as
+     part of the same family of tools rather than bringing its own typeface — the OS system
+     font (San Francisco on macOS, Segoe UI on Windows), not a bundled webfont. */
+  font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Inter,
+    'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   color: var(--ink);
@@ -68,12 +72,12 @@ a { color: inherit; text-decoration: none; }
 
 .navbar-brand {
   font-size: 19px;
-  font-weight: 300;
+  font-weight: 500;
   letter-spacing: 0.01em;
 }
 .navbar-brand .accent {
   color: var(--obsidian);
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .navbar-actions { display: flex; align-items: center; gap: 8px; }
@@ -85,7 +89,7 @@ a { color: inherit; text-decoration: none; }
   gap: 7px;
   font-family: inherit;
   font-size: 13.5px;
-  font-weight: 700;
+  font-weight: 600;
   border-radius: 100px;
   padding: 9px 20px;
   border: 1px solid transparent;
@@ -127,13 +131,13 @@ a { color: inherit; text-decoration: none; }
 .hero-heading-group { display: flex; flex-direction: column; gap: 4px; }
 .eyebrow {
   font-size: 11.5px;
-  font-weight: 700;
+  font-weight: 600;
   letter-spacing: 0.09em;
   text-transform: uppercase;
   color: var(--obsidian);
 }
-h1 { font-size: 28px; font-weight: 800; margin: 0; letter-spacing: -0.01em; }
-h2 { font-size: 17px; font-weight: 800; margin: 0 0 4px; letter-spacing: -0.005em; }
+h1 { font-size: 28px; font-weight: 700; margin: 0; letter-spacing: -0.01em; }
+h2 { font-size: 17px; font-weight: 600; margin: 0 0 4px; letter-spacing: -0.005em; }
 
 .status-row { display: flex; align-items: center; gap: 9px; }
 .pulse-dot {
@@ -142,7 +146,7 @@ h2 { font-size: 17px; font-weight: 800; margin: 0 0 4px; letter-spacing: -0.005e
   flex: 0 0 auto;
 }
 .pulse-dot.is-paused { background: var(--ink-faint); }
-.status-label { font-size: 12.5px; font-weight: 700; color: var(--ink-soft); letter-spacing: 0.01em; }
+.status-label { font-size: 12.5px; font-weight: 600; color: var(--ink-soft); letter-spacing: 0.01em; }
 
 .muted { color: var(--ink-soft); }
 
@@ -159,19 +163,19 @@ h2 { font-size: 17px; font-weight: 800; margin: 0 0 4px; letter-spacing: -0.005e
   border-radius: 4px 14px 14px 4px;
   padding: 20px 22px;
 }
-.card h3 { margin: 0 0 14px; font-size: 15px; font-weight: 800; }
+.card h3 { margin: 0 0 14px; font-size: 15px; font-weight: 600; }
 .stat-tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
 .stat-tile { display: flex; flex-direction: column; gap: 2px; }
 .stat-tile .value {
-  font-size: 26px; font-weight: 800; line-height: 1;
+  font-size: 26px; font-weight: 700; line-height: 1;
   font-variant-numeric: tabular-nums; letter-spacing: -0.02em;
 }
 .stat-tile .label {
-  font-size: 10.5px; font-weight: 700; text-transform: uppercase;
+  font-size: 10.5px; font-weight: 600; text-transform: uppercase;
   letter-spacing: 0.06em; color: var(--ink-soft);
 }
 .stat-row { display: flex; justify-content: space-between; padding: 4px 0; font-size: 14px; }
-.stat-row .value { font-weight: 700; }
+.stat-row .value { font-weight: 600; }
 
 .empty-state {
   border: 1px dashed var(--card-border);
@@ -192,7 +196,7 @@ h2 { font-size: 17px; font-weight: 800; margin: 0 0 4px; letter-spacing: -0.005e
 }
 .settings-section .eyebrow { margin-bottom: 2px; }
 .settings-section > p.muted { margin-top: 0; font-size: 13.5px; }
-label { display: block; font-size: 13px; font-weight: 700; margin: 12px 0 4px; }
+label { display: block; font-size: 13px; font-weight: 600; margin: 12px 0 4px; }
 input[type="text"], input[type="number"], input[type="time"], select {
   width: 100%;
   font-family: inherit;
@@ -209,7 +213,7 @@ input[type="checkbox"] { accent-color: var(--obsidian); margin-right: 6px; }
 .day-picker label {
   display: inline-flex; align-items: center; gap: 4px;
   border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px;
-  font-weight: 600; margin: 0; cursor: pointer; font-size: 13px;
+  font-weight: 500; margin: 0; cursor: pointer; font-size: 13px;
 }
 .field-row { display: flex; gap: 12px; }
 .field-row > * { flex: 1; }
@@ -217,7 +221,7 @@ input[type="checkbox"] { accent-color: var(--obsidian); margin-right: 6px; }
 .vault-item { border: 1px solid var(--card-border); border-radius: 12px; padding: 14px 16px; }
 .vault-item-header { display: flex; justify-content: space-between; align-items: center; }
 .badge {
-  font-size: 10.5px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em;
+  font-size: 10.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;
   padding: 3px 9px; border-radius: 100px; background: var(--obsidian-wash); color: var(--obsidian);
 }
 .error-banner {
