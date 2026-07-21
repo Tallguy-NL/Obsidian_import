@@ -18,6 +18,10 @@ class WorkerBridge {
     this.shuttingDown = false;
     this.respawnAttempts = 0;
     this.eventListeners = [];
+    // Last known "now processing" snapshot, kept here (not just forwarded) so a renderer that
+    // loads/reloads mid-flight can ask for the current state instead of waiting for the next
+    // start/finish event, which might not fire for a while if nothing changes.
+    this.lastProcessingStatus = { items: [] };
   }
 
   start() {
@@ -27,6 +31,9 @@ class WorkerBridge {
     });
 
     this.child.on('message', (message) => {
+      if (message?.type === 'processingStatusChanged') {
+        this.lastProcessingStatus = { items: message.items };
+      }
       for (const listener of this.eventListeners) listener(message);
     });
 
@@ -36,6 +43,7 @@ class WorkerBridge {
     this.child.on('exit', (code) => {
       console.log(`[main] worker exited with code ${code}`);
       this.child = null;
+      this.lastProcessingStatus = { items: [] }; // a dead worker has nothing in flight
       if (this.shuttingDown) return;
       if (this.respawnAttempts >= MAX_RESPAWN_ATTEMPTS) {
         console.error('[main] worker exceeded max respawn attempts, giving up');
@@ -53,6 +61,10 @@ class WorkerBridge {
 
   onEvent(listener) {
     this.eventListeners.push(listener);
+  }
+
+  getProcessingStatus() {
+    return this.lastProcessingStatus;
   }
 
   shutdown() {

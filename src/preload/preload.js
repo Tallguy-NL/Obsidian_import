@@ -15,6 +15,7 @@ contextBridge.exposeInMainWorld('api', {
 
   getStats: () => ipcRenderer.invoke(IPC.GET_STATS),
   setPaused: (paused) => ipcRenderer.invoke(IPC.SET_PAUSED, paused),
+  getProcessingStatus: () => ipcRenderer.invoke(IPC.GET_PROCESSING_STATUS),
 
   pickExportDestination: () => ipcRenderer.invoke(IPC.PICK_EXPORT_DEST),
   pickImportFile: () => ipcRenderer.invoke(IPC.PICK_IMPORT_FILE),

@@ -179,6 +179,20 @@ h2 { font-size: 17px; font-weight: 600; margin: 0 0 4px; letter-spacing: -0.005e
 .stat-row { display: flex; justify-content: space-between; padding: 4px 0; font-size: 14px; }
 .stat-row .value { font-weight: 600; }
 
+.now-processing-card { margin-top: 16px; }
+.processing-list { display: flex; flex-direction: column; gap: 10px; }
+.processing-row { display: flex; align-items: center; gap: 10px; font-size: 14px; }
+.processing-row .pulse-dot { flex: 0 0 auto; }
+.processing-doc {
+  font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.processing-vault {
+  margin-left: auto; flex: 0 0 auto;
+  font-size: 12.5px; color: var(--ink-soft);
+}
+.pulse-dot.is-done { background: var(--ink-faint); }
+.processing-row.is-done .processing-doc { font-weight: 400; color: var(--ink-soft); }
+
 .empty-state {
   border: 1px dashed var(--card-border);
   border-radius: 14px;

@@ -2,6 +2,7 @@ const vaultCardsEl = document.getElementById('vaultCards');
 const pauseResumeBtn = document.getElementById('pauseResumeBtn');
 const pulseDotEl = document.getElementById('pulseDot');
 const statusLabelEl = document.getElementById('statusLabel');
+const nowProcessingEl = document.getElementById('nowProcessing');
 
 let paused = false;
 
@@ -30,6 +31,23 @@ function renderVaultCards(vaults) {
     .join('');
 }
 
+function renderNowProcessing(items) {
+  if (!items || items.length === 0) {
+    nowProcessingEl.innerHTML = '<p class="muted">Idle — waiting for new documents.</p>';
+    return;
+  }
+  nowProcessingEl.innerHTML = items
+    .map(
+      (item) => `
+      <div class="processing-row${item.inProgress ? '' : ' is-done'}">
+        <span class="pulse-dot${item.inProgress ? ' is-live' : ' is-done'}"></span>
+        <span class="processing-doc">${escapeHtml(item.documentName)}</span>
+        <span class="processing-vault">${escapeHtml(item.vaultName)}</span>
+      </div>`
+    )
+    .join('');
+}
+
 function escapeHtml(str) {
   return String(str).replace(/[&<>"']/g, (c) => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
@@ -50,6 +68,11 @@ async function refreshStats() {
   renderPauseButton();
 }
 
+async function refreshProcessingStatus() {
+  const status = await window.api.getProcessingStatus();
+  renderNowProcessing(status.items);
+}
+
 pauseResumeBtn.addEventListener('click', async () => {
   pauseResumeBtn.disabled = true;
   await window.api.setPaused(!paused);
@@ -61,7 +84,11 @@ window.api.onWorkerEvent((payload) => {
   if (payload?.type === 'documentProcessed' || payload?.type === 'statsChanged') {
     refreshStats();
   }
+  if (payload?.type === 'processingStatusChanged') {
+    renderNowProcessing(payload.items);
+  }
 });
 
 refreshStats();
+refreshProcessingStatus();
 setInterval(refreshStats, 30_000);

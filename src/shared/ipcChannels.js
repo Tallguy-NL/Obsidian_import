@@ -17,6 +17,7 @@ const IPC = Object.freeze({
   // Stats / worker control
   GET_STATS: 'stats:get',
   SET_PAUSED: 'worker:setPaused',
+  GET_PROCESSING_STATUS: 'worker:getProcessingStatus',
 
   // Database export / import (migrating to a new machine)
   PICK_EXPORT_DEST: 'db:pickExportDest',

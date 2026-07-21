@@ -25,7 +25,11 @@ app.whenReady().then(() => {
   workerBridge.start();
 
   workerBridge.onEvent((message) => {
-    if (message?.type === 'documentProcessed' || message?.type === 'statsChanged') {
+    if (
+      message?.type === 'documentProcessed'
+      || message?.type === 'statsChanged'
+      || message?.type === 'processingStatusChanged'
+    ) {
       const win = getMainWindow();
       if (win && !win.isDestroyed()) {
         win.webContents.send(IPC.WORKER_EVENT, message);

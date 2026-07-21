@@ -4,7 +4,15 @@ const STATUS = Object.freeze({
   PROCESSED_TEXT_FOUND: 210,
   PROCESSED_TEXT_AND_TAGS: 220,
   NOT_PROCESSED: 400,
+  // Failed MAX_PROCESSING_ATTEMPTS times in a row — unlike NOT_PROCESSED (400), this is never
+  // retried again (see the status_code guards in importPoller.js/backfillScanner.js), so a
+  // permanently broken file (corrupt, password-protected, etc.) stops being retried forever.
+  FAILED_PERMANENTLY: 410,
 });
+
+// A document that fails this many times in a row is marked FAILED_PERMANENTLY instead of
+// NOT_PROCESSED, so it stops being retried on every future tick.
+const MAX_PROCESSING_ATTEMPTS = 3;
 
 const SOURCE_TYPE = Object.freeze({
   IMPORT: 'import',
@@ -52,6 +60,7 @@ const AUTO_GUID_TAG = 'guid';
 
 module.exports = {
   STATUS,
+  MAX_PROCESSING_ATTEMPTS,
   SOURCE_TYPE,
   ALL_IMAGE_EXTENSIONS,
   HEIC_EXTENSIONS,

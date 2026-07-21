@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const matter = require('gray-matter');
 const db = require('./db');
+const activity = require('./activityTracker');
 const { walkMarkdownFiles, walkAllFiles } = require('./vaultAnalyzer');
 const { extractText } = require('./pipeline/extractText');
 const { matchTags } = require('./pipeline/tagMatcher');
@@ -144,59 +145,70 @@ async function processBacklogItem(vault, item, settings) {
     dupIndex: null,
   });
 
-  if (doc.status_code !== STATUS.PENDING && doc.status_code !== STATUS.NOT_PROCESSED) {
-    // A previously-FAILED (400) document falls through to the real extraction branch below
-    // instead, so it actually gets retried (e.g. after a fix like extractText no longer
-    // throwing on unsupported types) rather than being permanently stuck at 400 forever.
-    // The same physical file is embedded in another note and was already processed there —
-    // reuse its GUID/tags and just add the missing ID: line to *this* note, rather than
-    // re-matching tags (and rather than leaving this note stuck in the backlog forever). Text
-    // is cheap to re-extract (nothing else needs it) so this note still gets its own callout.
-    const matchedTags = db.getDocumentTagNames(doc.id);
-    const { text } = await extractText(item.resolvedPath, settings.imageTypesEnabled).catch(() => ({ text: '' }));
-    await appendIdLineForExistingAttachment({
-      notePath: item.notePath,
-      guid: doc.guid,
-      originalFilename: item.embedFileName,
-      matchedTags,
-      extractedText: text,
-    });
-    return { skipped: true, alreadyProcessedElsewhere: true };
+  if (doc.status_code === STATUS.FAILED_PERMANENTLY) {
+    // Failed MAX_PROCESSING_ATTEMPTS times already (see markDocumentFailed) — never retried
+    // again, unlike a single NOT_PROCESSED (400) below, so a genuinely broken file (corrupt,
+    // password-protected, ...) stops being attempted on every future tick forever.
+    return { skipped: true, permanentlyFailed: true };
   }
 
-  const knownTags = db.listVaultTags(vault.id);
+  const token = activity.start({ vaultId: vault.id, vaultName: vault.name, documentName: item.embedFileName });
   try {
-    const { text } = await extractText(item.resolvedPath, settings.imageTypesEnabled);
-    const matchedTags = matchTags(text, knownTags);
+    if (doc.status_code !== STATUS.PENDING && doc.status_code !== STATUS.NOT_PROCESSED) {
+      // A previously-FAILED (400) document falls through to the real extraction branch below
+      // instead, so it actually gets retried (e.g. after a fix like extractText no longer
+      // throwing on unsupported types) rather than being permanently stuck at 400 forever.
+      // The same physical file is embedded in another note and was already processed there —
+      // reuse its GUID/tags and just add the missing ID: line to *this* note, rather than
+      // re-matching tags (and rather than leaving this note stuck in the backlog forever). Text
+      // is cheap to re-extract (nothing else needs it) so this note still gets its own callout.
+      const matchedTags = db.getDocumentTagNames(doc.id);
+      const { text } = await extractText(item.resolvedPath, settings.imageTypesEnabled).catch(() => ({ text: '' }));
+      await appendIdLineForExistingAttachment({
+        notePath: item.notePath,
+        guid: doc.guid,
+        originalFilename: item.embedFileName,
+        matchedTags,
+        extractedText: text,
+      });
+      return { skipped: true, alreadyProcessedElsewhere: true };
+    }
 
-    await appendIdLineForExistingAttachment({
-      notePath: item.notePath,
-      guid: doc.guid,
-      originalFilename: item.embedFileName,
-      matchedTags,
-      extractedText: text,
-    });
+    const knownTags = db.listVaultTags(vault.id);
+    try {
+      const { text } = await extractText(item.resolvedPath, settings.imageTypesEnabled);
+      const matchedTags = matchTags(text, knownTags);
 
-    const statusCode = text.length === 0
-      ? STATUS.PROCESSED_NO_TEXT
-      : (matchedTags.length > 0 ? STATUS.PROCESSED_TEXT_AND_TAGS : STATUS.PROCESSED_TEXT_FOUND);
+      await appendIdLineForExistingAttachment({
+        notePath: item.notePath,
+        guid: doc.guid,
+        originalFilename: item.embedFileName,
+        matchedTags,
+        extractedText: text,
+      });
 
-    db.markDocumentProcessed(doc.id, {
-      statusCode,
-      extractedTextChars: text.length,
-      notePath: item.notePath,
-      fileSizeBytes: stat.size,
-    });
-    db.upsertTag(vault.id, AUTO_GUID_TAG);
-    db.linkDocumentTags(doc.id, vault.id, [...matchedTags, AUTO_GUID_TAG]);
-    return { skipped: false, statusCode };
-  } catch (err) {
-    db.markDocumentProcessed(doc.id, {
-      statusCode: STATUS.NOT_PROCESSED,
-      errorMessage: String(err && err.message || err),
-      fileSizeBytes: stat.size,
-    });
-    return { skipped: false, statusCode: STATUS.NOT_PROCESSED, error: err };
+      const statusCode = text.length === 0
+        ? STATUS.PROCESSED_NO_TEXT
+        : (matchedTags.length > 0 ? STATUS.PROCESSED_TEXT_AND_TAGS : STATUS.PROCESSED_TEXT_FOUND);
+
+      db.markDocumentProcessed(doc.id, {
+        statusCode,
+        extractedTextChars: text.length,
+        notePath: item.notePath,
+        fileSizeBytes: stat.size,
+      });
+      db.upsertTag(vault.id, AUTO_GUID_TAG);
+      db.linkDocumentTags(doc.id, vault.id, [...matchedTags, AUTO_GUID_TAG]);
+      return { skipped: false, statusCode };
+    } catch (err) {
+      const { statusCode } = db.markDocumentFailed(doc.id, {
+        errorMessage: String(err && err.message || err),
+        fileSizeBytes: stat.size,
+      });
+      return { skipped: false, statusCode, error: err };
+    }
+  } finally {
+    activity.finish(token);
   }
 }
 

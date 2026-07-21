@@ -55,6 +55,8 @@ function registerIpcHandlers(workerBridge) {
 
   ipcMain.handle(IPC.GET_STATS, () => db.getStats());
 
+  ipcMain.handle(IPC.GET_PROCESSING_STATUS, () => workerBridge.getProcessingStatus());
+
   ipcMain.handle(IPC.SET_PAUSED, (_event, paused) => {
     const settings = db.updateSettings({ workerPaused: !!paused });
     workerBridge.postMessage({ type: 'settings-changed' });

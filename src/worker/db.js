@@ -1,7 +1,7 @@
 const path = require('path');
 const { createConnection } = require('../shared/dbConnection');
 const { nowUtcIso } = require('../shared/time');
-const { STATUS } = require('../shared/constants');
+const { STATUS, MAX_PROCESSING_ATTEMPTS } = require('../shared/constants');
 const { resolveUserDataPath } = require('../shared/userDataPath');
 
 let db = null;
@@ -122,7 +122,7 @@ function listPendingDocuments(vaultId, groupKey) {
 function markDocumentProcessed(id, { statusCode, extractedTextChars, notePath, errorMessage, archivedPath, mimeType, fileSizeBytes }) {
   getDb()
     .prepare(
-      `UPDATE documents SET status_code=?, extracted_text_chars=?, note_path=?, error_message=?,
+      `UPDATE documents SET status_code=?, failure_count=0, extracted_text_chars=?, note_path=?, error_message=?,
        archived_path=?, mime_type=?, file_size_bytes=?, processed_at_utc=?, updated_at_utc=? WHERE id=?`
     )
     .run(
@@ -137,6 +137,24 @@ function markDocumentProcessed(id, { statusCode, extractedTextChars, notePath, e
       nowUtcIso(),
       id
     );
+}
+
+// Records a failed processing attempt. Once a document has failed MAX_PROCESSING_ATTEMPTS times
+// in a row, it's marked FAILED_PERMANENTLY instead of NOT_PROCESSED so importPoller.js/
+// backfillScanner.js's retry guards stop picking it up on every future tick — a file that's
+// actually broken (corrupt, password-protected, ...) would otherwise be retried forever.
+function markDocumentFailed(id, { errorMessage, fileSizeBytes }) {
+  const database = getDb();
+  const current = database.prepare('SELECT failure_count FROM documents WHERE id = ?').get(id);
+  const failureCount = (current?.failure_count ?? 0) + 1;
+  const statusCode = failureCount >= MAX_PROCESSING_ATTEMPTS ? STATUS.FAILED_PERMANENTLY : STATUS.NOT_PROCESSED;
+  database
+    .prepare(
+      `UPDATE documents SET status_code=?, failure_count=?, error_message=?, file_size_bytes=?,
+       processed_at_utc=?, updated_at_utc=? WHERE id=?`
+    )
+    .run(statusCode, failureCount, errorMessage ?? null, fileSizeBytes ?? null, nowUtcIso(), nowUtcIso(), id);
+  return { statusCode, failureCount };
 }
 
 function listProcessedDocumentsWithNotePath(vaultId) {
@@ -242,6 +260,7 @@ module.exports = {
   insertPendingDocument,
   listPendingDocuments,
   markDocumentProcessed,
+  markDocumentFailed,
   listProcessedDocumentsWithNotePath,
   flagDocumentOrphan,
   clearDocumentOrphanFlag,

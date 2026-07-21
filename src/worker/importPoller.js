@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const db = require('./db');
+const activity = require('./activityTracker');
 const { extractText } = require('./pipeline/extractText');
 const { parseFileName } = require('./pipeline/groupKey');
 const { matchTags } = require('./pipeline/tagMatcher');
@@ -57,7 +58,9 @@ async function processOneFile({ vault, fileName, groupKey, imageTypesEnabled, kn
   // skipped forever, same as backfillScanner.js does for existing-vault attachments — a fix
   // that no longer applies (e.g. the ImageData polyfill in pdfExtractor.js) should actually
   // get picked up on the next poll rather than leaving the file stuck silently in the import
-  // folder forever.
+  // folder forever. FAILED_PERMANENTLY (410) is deliberately excluded from that retry, though —
+  // it's already failed MAX_PROCESSING_ATTEMPTS times, so it falls into this skip like any
+  // other non-retryable status instead of being attempted forever.
   if (existingDoc && existingDoc.status_code !== STATUS.PENDING && existingDoc.status_code !== STATUS.NOT_PROCESSED) {
     return { skipped: true };
   }
@@ -80,6 +83,7 @@ async function processOneFile({ vault, fileName, groupKey, imageTypesEnabled, kn
     return { skipped: true };
   }
 
+  const token = activity.start({ vaultId: vault.id, vaultName: vault.name, documentName: fileName });
   try {
     const { text, title: extractedTitle } = await extractText(sourcePath, imageTypesEnabled);
     const matchedTags = matchTags(text, knownTags);
@@ -126,12 +130,13 @@ async function processOneFile({ vault, fileName, groupKey, imageTypesEnabled, kn
       // instead (see the status_code check above), but this makes the underlying cause visible.
       console.error(`[importPoller] failed to move ${fileName} to errors/:`, moveErr);
     });
-    db.markDocumentProcessed(doc.id, {
-      statusCode: STATUS.NOT_PROCESSED,
+    const { statusCode } = db.markDocumentFailed(doc.id, {
       errorMessage: String(err && err.message || err),
       fileSizeBytes: stat.size,
     });
-    return { skipped: false, statusCode: STATUS.NOT_PROCESSED, error: err };
+    return { skipped: false, statusCode, error: err };
+  } finally {
+    activity.finish(token);
   }
 }
 

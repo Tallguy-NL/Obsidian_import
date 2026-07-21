@@ -191,8 +191,8 @@ async function getCachedVaultStats(database, vault, weekStartUtc) {
     .prepare('SELECT COUNT(*) AS c FROM documents WHERE vault_id = ? AND status_code != 0')
     .get(vault.id).c;
   const failed = database
-    .prepare('SELECT COUNT(*) AS c FROM documents WHERE vault_id = ? AND status_code = ?')
-    .get(vault.id, STATUS.NOT_PROCESSED).c;
+    .prepare('SELECT COUNT(*) AS c FROM documents WHERE vault_id = ? AND status_code IN (?, ?)')
+    .get(vault.id, STATUS.NOT_PROCESSED, STATUS.FAILED_PERMANENTLY).c;
   const addedThisWeek = database
     .prepare('SELECT COUNT(*) AS c FROM documents WHERE vault_id = ? AND discovered_at_utc >= ?')
     .get(vault.id, weekStartUtc).c;
