@@ -12,6 +12,22 @@ function extOf(filePath) {
   return path.extname(filePath).slice(1).toLowerCase();
 }
 
+// Some exports (e.g. Evernote) rename a plain JPEG to `.heic`/`.heif` without re-encoding it —
+// Obsidian/macOS render it fine by sniffing the real content, but heic-convert only understands
+// actual HEIC bitstreams and throws "input buffer is not a HEIC image" on these. Checking the
+// JPEG magic bytes lets a mislabeled file fall through to the plain-image OCR path instead of
+// failing outright.
+async function isJpegMagic(filePath) {
+  const fd = await fs.promises.open(filePath, 'r');
+  try {
+    const buf = Buffer.alloc(3);
+    await fd.read(buf, 0, 3, 0);
+    return buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff;
+  } finally {
+    await fd.close();
+  }
+}
+
 /**
  * Dispatches text extraction by file extension. `imageTypesEnabled` gates OCR for image
  * files per Settings §5 — an unchecked image type still gets a note + embed, just skips OCR
@@ -40,8 +56,9 @@ async function extractText(filePath, imageTypesEnabled) {
     if (!imageTypesEnabled.includes(ext)) {
       return { text: '', title: null, usedOcr: false, skippedOcr: true };
     }
-    const ocrInput = isHeic ? await heicFileToJpegBuffer(filePath) : filePath;
-    if (!isHeic) console.log(`[extractText] OCR: ${filePath}`);
+    const actuallyHeic = isHeic && !(await isJpegMagic(filePath));
+    const ocrInput = actuallyHeic ? await heicFileToJpegBuffer(filePath) : filePath;
+    if (!actuallyHeic) console.log(`[extractText] OCR: ${filePath}`);
     const text = await ocrImage(ocrInput);
     return { text, title: null, usedOcr: true, skippedOcr: false };
   }

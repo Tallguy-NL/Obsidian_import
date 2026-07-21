@@ -5,6 +5,7 @@ const Database = require('better-sqlite3');
 const { createConnection } = require('../shared/dbConnection');
 const { startOfLocalWeekUtcIso } = require('../shared/time');
 const { findBacklog } = require('../worker/backfillScanner');
+const { STATUS } = require('../shared/constants');
 
 // The Import folder gets scanned as "new documents to ingest" and processed files get moved
 // out of it into Archive; if either folder is the vault root (or nested inside it), the
@@ -189,11 +190,21 @@ async function getCachedVaultStats(database, vault, weekStartUtc) {
   const processed = database
     .prepare('SELECT COUNT(*) AS c FROM documents WHERE vault_id = ? AND status_code != 0')
     .get(vault.id).c;
+  const failed = database
+    .prepare('SELECT COUNT(*) AS c FROM documents WHERE vault_id = ? AND status_code = ?')
+    .get(vault.id, STATUS.NOT_PROCESSED).c;
   const addedThisWeek = database
     .prepare('SELECT COUNT(*) AS c FROM documents WHERE vault_id = ? AND discovered_at_utc >= ?')
     .get(vault.id, weekStartUtc).c;
-  const backlog = await findBacklog(vault);
-  const stats = { total: processed + backlog.length, processed, addedThisWeek, atMs: Date.now() };
+  const rawBacklog = await findBacklog(vault);
+  // A backlog item whose attachment already has a `documents` row (a previous attempt failed
+  // and never got to write the `ID:` line, so findBacklog keeps rediscovering it) is already
+  // reflected in `processed`/`failed` above. Counting it again here would double-count it in
+  // `total` forever, since a permanently failing item never gains an `ID:` line and so never
+  // stops showing up as backlog — which is exactly what made `total` outrun `processed`.
+  const hasDocRow = database.prepare('SELECT 1 FROM documents WHERE vault_id = ? AND original_path = ?');
+  const newBacklog = rawBacklog.filter((item) => !hasDocRow.get(vault.id, item.resolvedPath));
+  const stats = { total: processed + newBacklog.length, processed, failed, addedThisWeek, atMs: Date.now() };
   statsCache.set(vault.id, stats);
   return stats;
 }
@@ -204,8 +215,8 @@ async function getStats() {
   const weekStartUtc = startOfLocalWeekUtcIso(settings.timezone);
   const vaults = await Promise.all(
     listVaults().map(async (vault) => {
-      const { total, processed, addedThisWeek } = await getCachedVaultStats(database, vault, weekStartUtc);
-      return { vaultId: vault.id, name: vault.name, total, processed, addedThisWeek };
+      const { total, processed, failed, addedThisWeek } = await getCachedVaultStats(database, vault, weekStartUtc);
+      return { vaultId: vault.id, name: vault.name, total, processed, failed, addedThisWeek };
     })
   );
   return { vaults, paused: settings.workerPaused };

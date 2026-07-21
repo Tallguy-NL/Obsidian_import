@@ -11,17 +11,22 @@ function renderVaultCards(vaults) {
     return;
   }
   vaultCardsEl.innerHTML = vaults
-    .map(
-      (v) => `
+    .map((v) => {
+      const hasFailed = v.failed > 0;
+      const failedTile = hasFailed
+        ? `<div class="stat-tile tile-failed"><span class="value">${v.failed}</span><span class="label">Failed</span></div>`
+        : '';
+      return `
       <div class="card">
         <h3>${escapeHtml(v.name)}</h3>
-        <div class="stat-tiles">
+        <div class="stat-tiles${hasFailed ? ' has-failed' : ''}">
           <div class="stat-tile"><span class="value">${v.total}</span><span class="label">Total</span></div>
           <div class="stat-tile"><span class="value">${v.processed}</span><span class="label">Processed</span></div>
           <div class="stat-tile"><span class="value">${v.addedThisWeek}</span><span class="label">This week</span></div>
+          ${failedTile}
         </div>
-      </div>`
-    )
+      </div>`;
+    })
     .join('');
 }
 
