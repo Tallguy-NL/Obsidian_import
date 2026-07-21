@@ -41,6 +41,7 @@ async function extractText(filePath, imageTypesEnabled) {
       return { text: '', title: null, usedOcr: false, skippedOcr: true };
     }
     const ocrInput = isHeic ? await heicFileToJpegBuffer(filePath) : filePath;
+    if (!isHeic) console.log(`[extractText] OCR: ${filePath}`);
     const text = await ocrImage(ocrInput);
     return { text, title: null, usedOcr: true, skippedOcr: false };
   }

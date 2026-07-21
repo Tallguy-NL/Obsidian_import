@@ -41,6 +41,11 @@ const BACKFILL_ITEMS_PER_TICK = 10;
 const ERRORS_SUBFOLDER = 'errors';
 const GUID_FILENAME_SEPARATOR = '__';
 const MIN_TEXT_LAYER_CHARS = 20; // below this, treat a PDF page as scanned/image-only
+// Per-file extraction deadlines: a hung pdf.js render or wedged tesseract worker must fail the
+// one document rather than freeze the whole tick loop forever (see pipeline/withTimeout.js).
+const OCR_TIMEOUT_MS = 90_000; // one image/page through tesseract
+const PDF_EXTRACTION_TIMEOUT_MS = 300_000; // whole PDF: text layer + up to 5 OCR fallback pages
+const HEIC_CONVERT_TIMEOUT_MS = 30_000;
 // Always merged into every processed document's frontmatter tags, so all app-processed notes
 // can be found/filtered via a single tag regardless of which content tags were matched.
 const AUTO_GUID_TAG = 'guid';
@@ -59,4 +64,7 @@ module.exports = {
   GUID_FILENAME_SEPARATOR,
   MIN_TEXT_LAYER_CHARS,
   AUTO_GUID_TAG,
+  OCR_TIMEOUT_MS,
+  PDF_EXTRACTION_TIMEOUT_MS,
+  HEIC_CONVERT_TIMEOUT_MS,
 };

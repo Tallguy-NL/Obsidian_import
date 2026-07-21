@@ -3,7 +3,8 @@ const path = require('path');
 const napiCanvas = require('@napi-rs/canvas');
 const { createCanvas } = napiCanvas;
 const { ocrImage } = require('./ocrEngine');
-const { MIN_TEXT_LAYER_CHARS } = require('../../shared/constants');
+const { withTimeout } = require('./withTimeout');
+const { MIN_TEXT_LAYER_CHARS, PDF_EXTRACTION_TIMEOUT_MS } = require('../../shared/constants');
 
 const MAX_OCR_FALLBACK_PAGES = 5; // bound OCR cost for large scanned PDFs
 const RENDER_SCALE = 2; // ~144dpi-ish for a 72dpi base viewport, good enough for OCR
@@ -127,7 +128,7 @@ async function renderPageToPngBuffer(page) {
  * rendered pages instead. Also returns the PDF's metadata Title, if present, for the
  * note-title rule (title = metadata Title, else cleaned filename).
  */
-async function extractPdfText(filePath) {
+async function extractPdfTextInner(filePath) {
   const pdfjsLib = await loadPdfjs();
   const data = new Uint8Array(await fs.promises.readFile(filePath));
   const loadingTask = pdfjsLib.getDocument({
@@ -181,6 +182,19 @@ async function extractPdfText(filePath) {
   } finally {
     await pdfDoc.destroy();
   }
+}
+
+// pdf.js's Node/worker-thread misdetection (see the comments above) makes a wedged render or
+// parse indistinguishable from a slow one — this is the only backstop against a single bad PDF
+// freezing the whole worker tick loop forever. Logged before starting so the last log line
+// names the file if it does time out.
+async function extractPdfText(filePath) {
+  console.log(`[pdfExtractor] extracting: ${filePath}`);
+  const innerPromise = extractPdfTextInner(filePath);
+  // Abandoned (not cancelled) if the timeout wins below — swallow its eventual settlement so
+  // it doesn't surface as an unhandled rejection once nothing is still awaiting it.
+  innerPromise.catch(() => {});
+  return withTimeout(innerPromise, PDF_EXTRACTION_TIMEOUT_MS, `extractPdfText ${filePath}`);
 }
 
 module.exports = { extractPdfText };
