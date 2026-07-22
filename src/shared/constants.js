@@ -54,6 +54,17 @@ const MIN_TEXT_LAYER_CHARS = 20; // below this, treat a PDF page as scanned/imag
 const OCR_TIMEOUT_MS = 90_000; // one image/page through tesseract
 const PDF_EXTRACTION_TIMEOUT_MS = 300_000; // whole PDF: text layer + up to 5 OCR fallback pages
 const HEIC_CONVERT_TIMEOUT_MS = 30_000;
+// Same "never freeze the tick loop forever" reasoning as the extraction timeouts above, but for
+// the plain fs calls around extraction (copy into attachments, note write, archive/rename) that
+// had no deadline of their own — a source/destination folder on a sync drive (iCloud Drive,
+// OneDrive, ...) whose file isn't fully downloaded/uploaded yet can block these indefinitely.
+// Comfortably above PDF_EXTRACTION_TIMEOUT_MS so a legitimately slow OCR'd PDF isn't cut off by
+// the outer deadline before its own inner timeout would've caught it.
+const DOCUMENT_PROCESSING_TIMEOUT_MS = 360_000;
+// A single standalone fs call outside the main extract/write pipeline above: moving a failed
+// file into errors/, or reading one note's raw content while scanning for backlog/tags. Shorter
+// than DOCUMENT_PROCESSING_TIMEOUT_MS since it's just one call, not a whole pipeline.
+const FILE_IO_TIMEOUT_MS = 30_000;
 // Always merged into every processed document's frontmatter tags, so all app-processed notes
 // can be found/filtered via a single tag regardless of which content tags were matched.
 const AUTO_GUID_TAG = 'guid';
@@ -76,4 +87,6 @@ module.exports = {
   OCR_TIMEOUT_MS,
   PDF_EXTRACTION_TIMEOUT_MS,
   HEIC_CONVERT_TIMEOUT_MS,
+  DOCUMENT_PROCESSING_TIMEOUT_MS,
+  FILE_IO_TIMEOUT_MS,
 };

@@ -2,6 +2,8 @@ const fs = require('fs');
 const path = require('path');
 const matter = require('gray-matter');
 const db = require('./db');
+const { withTimeout } = require('./pipeline/withTimeout');
+const { FILE_IO_TIMEOUT_MS } = require('../shared/constants');
 
 const SKIP_DIRS = new Set(['.obsidian', '.git', '.trash', 'node_modules']);
 // Matches Obsidian inline tags (#tag, #nested/tag, #tag_with-dashes); requires a letter right
@@ -82,7 +84,11 @@ async function analyzeVaultTags(vaultId) {
   const noteFiles = await walkMarkdownFiles(vault.root_path);
   const allTags = new Set();
   for (const filePath of noteFiles) {
-    const raw = await fs.promises.readFile(filePath, 'utf8').catch(() => '');
+    // Raced against a deadline (see FILE_IO_TIMEOUT_MS) — a note stuck on a sync drive would
+    // otherwise wedge this whole tag scan on one file instead of just skipping it.
+    const readPromise = fs.promises.readFile(filePath, 'utf8');
+    readPromise.catch(() => {});
+    const raw = await withTimeout(readPromise, FILE_IO_TIMEOUT_MS, `analyzeVaultTags read ${filePath}`).catch(() => '');
     if (!raw) continue;
     for (const tag of collectTagsFromNote(raw)) allTags.add(tag);
   }

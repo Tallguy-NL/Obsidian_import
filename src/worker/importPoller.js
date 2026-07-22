@@ -8,7 +8,10 @@ const { matchTags } = require('./pipeline/tagMatcher');
 const { upsertNoteForAttachment, sanitizeTitleForFileName } = require('./pipeline/noteWriter');
 const { copyToAttachments, archiveOrDelete, moveToErrors } = require('./pipeline/fileMover');
 const { generateGuid } = require('./pipeline/guid');
-const { STATUS, SOURCE_TYPE, AUTO_GUID_TAG } = require('../shared/constants');
+const { withTimeout } = require('./pipeline/withTimeout');
+const {
+  STATUS, SOURCE_TYPE, AUTO_GUID_TAG, DOCUMENT_PROCESSING_TIMEOUT_MS, FILE_IO_TIMEOUT_MS,
+} = require('../shared/constants');
 
 const SUPPORTED_EXTENSIONS = new Set([
   'txt', 'md', 'pdf', 'png', 'jpg', 'jpeg', 'bmp', 'gif', 'webp', 'heic', 'heif',
@@ -43,6 +46,44 @@ function groupFiles(fileNames) {
     members.sort((a, b) => (a.dupIndex ?? -1) - (b.dupIndex ?? -1));
   }
   return groups;
+}
+
+/**
+ * The extract → copy → note-write → archive chain for one file. None of the fs calls in here
+ * (copyToAttachments/upsertNoteForAttachment/archiveOrDelete) had their own deadline before —
+ * only extractText's own PDF/OCR/HEIC paths did — so a stuck copy or rename (e.g. a source or
+ * archive folder on a sync drive whose file isn't fully materialized) could still freeze the
+ * tick loop forever. Callers race this whole thing against DOCUMENT_PROCESSING_TIMEOUT_MS.
+ */
+async function runImportPipeline({ vault, sourcePath, fileName, groupKey, imageTypesEnabled, knownTags, guid }) {
+  const { text, title: extractedTitle } = await extractText(sourcePath, imageTypesEnabled);
+  const matchedTags = matchTags(text, knownTags);
+  const noteTitle = extractedTitle || cleanTitleFromGroupKey(groupKey);
+
+  const { embedFileName } = await copyToAttachments(vault.root_path, sourcePath, fileName, guid);
+  const notePath = await upsertNoteForAttachment({
+    vaultRootPath: vault.root_path,
+    title: noteTitle,
+    embedFileName,
+    guid,
+    originalFilename: fileName,
+    matchedTags,
+    extractedText: text,
+  });
+
+  const statusCode = text.length === 0
+    ? STATUS.PROCESSED_NO_TEXT
+    : (matchedTags.length > 0 ? STATUS.PROCESSED_TEXT_AND_TAGS : STATUS.PROCESSED_TEXT_FOUND);
+
+  const { archivedPath } = await archiveOrDelete({
+    sourceFilePath: sourcePath,
+    originalFilename: fileName,
+    guid,
+    archiveFolderPath: vault.archive_folder_path,
+    deleteAfterImport: !!vault.delete_after_import,
+  });
+
+  return { statusCode, text, matchedTags, notePath, archivedPath };
 }
 
 /**
@@ -85,32 +126,13 @@ async function processOneFile({ vault, fileName, groupKey, imageTypesEnabled, kn
 
   const token = activity.start({ vaultId: vault.id, vaultName: vault.name, documentName: fileName });
   try {
-    const { text, title: extractedTitle } = await extractText(sourcePath, imageTypesEnabled);
-    const matchedTags = matchTags(text, knownTags);
-    const noteTitle = extractedTitle || cleanTitleFromGroupKey(groupKey);
-
-    const { embedFileName } = await copyToAttachments(vault.root_path, sourcePath, fileName, guid);
-    const notePath = await upsertNoteForAttachment({
-      vaultRootPath: vault.root_path,
-      title: noteTitle,
-      embedFileName,
-      guid,
-      originalFilename: fileName,
-      matchedTags,
-      extractedText: text,
-    });
-
-    const statusCode = text.length === 0
-      ? STATUS.PROCESSED_NO_TEXT
-      : (matchedTags.length > 0 ? STATUS.PROCESSED_TEXT_AND_TAGS : STATUS.PROCESSED_TEXT_FOUND);
-
-    const { archivedPath } = await archiveOrDelete({
-      sourceFilePath: sourcePath,
-      originalFilename: fileName,
-      guid,
-      archiveFolderPath: vault.archive_folder_path,
-      deleteAfterImport: !!vault.delete_after_import,
-    });
+    const pipelinePromise = runImportPipeline({ vault, sourcePath, fileName, groupKey, imageTypesEnabled, knownTags, guid });
+    // Abandoned (not cancelled) if the timeout wins below — swallow its eventual settlement so
+    // it doesn't surface as an unhandled rejection once nothing is still awaiting it.
+    pipelinePromise.catch(() => {});
+    const { statusCode, text, matchedTags, notePath, archivedPath } = await withTimeout(
+      pipelinePromise, DOCUMENT_PROCESSING_TIMEOUT_MS, `processOneFile ${fileName}`
+    );
 
     db.markDocumentProcessed(doc.id, {
       statusCode,
@@ -124,7 +146,12 @@ async function processOneFile({ vault, fileName, groupKey, imageTypesEnabled, kn
 
     return { skipped: false, statusCode };
   } catch (err) {
-    await moveToErrors(vault.import_folder_path, sourcePath, fileName).catch((moveErr) => {
+    // Also raced against a deadline: if the pipeline above timed out because the source file
+    // itself is stuck (e.g. an unmaterialized sync-drive file), this rename would hang on that
+    // same file forever too, otherwise re-freezing the tick loop right after "catching" it.
+    const moveErrPromise = moveToErrors(vault.import_folder_path, sourcePath, fileName);
+    moveErrPromise.catch(() => {});
+    await withTimeout(moveErrPromise, FILE_IO_TIMEOUT_MS, `moveToErrors ${fileName}`).catch((moveErr) => {
       // Left in place (not silently swallowed) so a file that fails to move into errors/
       // isn't left both unprocessed and undiagnosable — it'll be retried on the next poll
       // instead (see the status_code check above), but this makes the underlying cause visible.

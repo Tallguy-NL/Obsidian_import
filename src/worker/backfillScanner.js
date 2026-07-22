@@ -8,7 +8,11 @@ const { extractText } = require('./pipeline/extractText');
 const { matchTags } = require('./pipeline/tagMatcher');
 const { appendIdLineForExistingAttachment } = require('./pipeline/noteWriter');
 const { generateGuid } = require('./pipeline/guid');
-const { STATUS, SOURCE_TYPE, GUID_FILENAME_SEPARATOR, AUTO_GUID_TAG } = require('../shared/constants');
+const { withTimeout } = require('./pipeline/withTimeout');
+const {
+  STATUS, SOURCE_TYPE, GUID_FILENAME_SEPARATOR, AUTO_GUID_TAG,
+  DOCUMENT_PROCESSING_TIMEOUT_MS, FILE_IO_TIMEOUT_MS,
+} = require('../shared/constants');
 
 // Captures the filename part of ![[name]], ![[name|alias]], ![[name#heading]] embeds.
 const EMBED_LINE_RE = /!\[\[([^\]|#]+)/g;
@@ -88,7 +92,12 @@ async function findBacklog(vault) {
   const backlog = [];
 
   for (const notePath of noteFiles) {
-    const raw = await fs.promises.readFile(notePath, 'utf8').catch(() => null);
+    // Raced against a deadline like the rest of the pipeline (see DOCUMENT_PROCESSING_TIMEOUT_MS
+    // above) — a note file stuck on a sync drive would otherwise wedge this whole backlog scan,
+    // not just one document's processing.
+    const readPromise = fs.promises.readFile(notePath, 'utf8');
+    readPromise.catch(() => {});
+    const raw = await withTimeout(readPromise, FILE_IO_TIMEOUT_MS, `findBacklog read ${notePath}`).catch(() => null);
     if (!raw) continue;
     let parsed;
     try {
@@ -163,29 +172,41 @@ async function processBacklogItem(vault, item, settings) {
       // re-matching tags (and rather than leaving this note stuck in the backlog forever). Text
       // is cheap to re-extract (nothing else needs it) so this note still gets its own callout.
       const matchedTags = db.getDocumentTagNames(doc.id);
-      const { text } = await extractText(item.resolvedPath, settings.imageTypesEnabled).catch(() => ({ text: '' }));
-      await appendIdLineForExistingAttachment({
-        notePath: item.notePath,
-        guid: doc.guid,
-        originalFilename: item.embedFileName,
-        matchedTags,
-        extractedText: text,
-      });
+      const reExtractPromise = (async () => {
+        const { text } = await extractText(item.resolvedPath, settings.imageTypesEnabled).catch(() => ({ text: '' }));
+        await appendIdLineForExistingAttachment({
+          notePath: item.notePath,
+          guid: doc.guid,
+          originalFilename: item.embedFileName,
+          matchedTags,
+          extractedText: text,
+        });
+      })();
+      reExtractPromise.catch(() => {});
+      await withTimeout(reExtractPromise, DOCUMENT_PROCESSING_TIMEOUT_MS, `processBacklogItem (reuse) ${item.resolvedPath}`);
       return { skipped: true, alreadyProcessedElsewhere: true };
     }
 
     const knownTags = db.listVaultTags(vault.id);
     try {
-      const { text } = await extractText(item.resolvedPath, settings.imageTypesEnabled);
-      const matchedTags = matchTags(text, knownTags);
+      const extractAndWritePromise = (async () => {
+        const { text } = await extractText(item.resolvedPath, settings.imageTypesEnabled);
+        const matchedTags = matchTags(text, knownTags);
 
-      await appendIdLineForExistingAttachment({
-        notePath: item.notePath,
-        guid: doc.guid,
-        originalFilename: item.embedFileName,
-        matchedTags,
-        extractedText: text,
-      });
+        await appendIdLineForExistingAttachment({
+          notePath: item.notePath,
+          guid: doc.guid,
+          originalFilename: item.embedFileName,
+          matchedTags,
+          extractedText: text,
+        });
+
+        return { text, matchedTags };
+      })();
+      extractAndWritePromise.catch(() => {});
+      const { text, matchedTags } = await withTimeout(
+        extractAndWritePromise, DOCUMENT_PROCESSING_TIMEOUT_MS, `processBacklogItem ${item.resolvedPath}`
+      );
 
       const statusCode = text.length === 0
         ? STATUS.PROCESSED_NO_TEXT
