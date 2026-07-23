@@ -18,7 +18,7 @@ const SUPPORTED_EXTENSIONS = new Set([
 ]);
 
 function cleanTitleFromGroupKey(groupKey) {
-  return groupKey.replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim() || 'Untitled';
+  return groupKey.replace(/_+/g, ' ').replace(/\s+/g, ' ').trim() || 'Untitled';
 }
 
 async function listImportCandidates(importFolderPath) {
