@@ -6,6 +6,10 @@ const nowProcessingEl = document.getElementById('nowProcessing');
 
 let paused = false;
 
+function formatNumber(n) {
+  return n.toLocaleString('nl-NL');
+}
+
 function renderVaultCards(vaults) {
   if (!vaults.length) {
     vaultCardsEl.innerHTML = '<div class="empty-state">No vaults configured yet. Add one in Settings to see it here.</div>';
@@ -14,16 +18,20 @@ function renderVaultCards(vaults) {
   vaultCardsEl.innerHTML = vaults
     .map((v) => {
       const hasFailed = v.failed > 0;
+      const total = formatNumber(v.total);
+      const processed = formatNumber(v.processed);
+      const addedThisWeek = formatNumber(v.addedThisWeek);
+      const failed = formatNumber(v.failed);
       const failedTile = hasFailed
-        ? `<div class="stat-tile tile-failed"><span class="value">${v.failed}</span><span class="label">Failed</span></div>`
+        ? `<div class="stat-tile tile-failed"><span class="value">${failed}</span><span class="label">Failed</span></div>`
         : '';
       return `
       <div class="card">
         <h3>${escapeHtml(v.name)}</h3>
         <div class="stat-tiles${hasFailed ? ' has-failed' : ''}">
-          <div class="stat-tile"><span class="value">${v.total}</span><span class="label">Total</span></div>
-          <div class="stat-tile"><span class="value">${v.processed}</span><span class="label">Processed</span></div>
-          <div class="stat-tile"><span class="value">${v.addedThisWeek}</span><span class="label">This week</span></div>
+          <div class="stat-tile"><span class="value">${total}</span><span class="label">Total</span></div>
+          <div class="stat-tile"><span class="value">${processed}</span><span class="label">Processed</span></div>
+          <div class="stat-tile"><span class="value">${addedThisWeek}</span><span class="label">This week</span></div>
           ${failedTile}
         </div>
       </div>`;

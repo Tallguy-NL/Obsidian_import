@@ -153,7 +153,7 @@ h2 { font-size: 17px; font-weight: 600; margin: 0 0 4px; letter-spacing: -0.005e
 /* === Cards / vault grid === */
 .vault-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
   gap: 16px;
 }
 .card {
@@ -164,23 +164,28 @@ h2 { font-size: 17px; font-weight: 600; margin: 0 0 4px; letter-spacing: -0.005e
   padding: 20px 22px;
 }
 .card h3 { margin: 0 0 14px; font-size: 15px; font-weight: 600; }
-.stat-tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
-.stat-tiles.has-failed { grid-template-columns: repeat(4, 1fr); }
-.stat-tile { display: flex; flex-direction: column; gap: 2px; }
+.stat-tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.stat-tiles.has-failed { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.stat-tile { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .stat-tile .value {
   font-size: 26px; font-weight: 700; line-height: 1;
   font-variant-numeric: tabular-nums; letter-spacing: -0.02em;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .stat-tile .label {
   font-size: 10.5px; font-weight: 600; text-transform: uppercase;
   letter-spacing: 0.06em; color: var(--ink-soft);
+  overflow-wrap: break-word;
 }
 .stat-tile.tile-failed .value { color: var(--ember); }
 .stat-row { display: flex; justify-content: space-between; padding: 4px 0; font-size: 14px; }
 .stat-row .value { font-weight: 600; }
 
 .now-processing-card { margin-top: 16px; }
-.processing-list { display: flex; flex-direction: column; gap: 10px; }
+.processing-list {
+  display: flex; flex-direction: column; gap: 10px;
+  max-height: 125px; overflow: hidden;
+}
 .processing-row { display: flex; align-items: center; gap: 10px; font-size: 14px; }
 .processing-row .pulse-dot { flex: 0 0 auto; }
 .processing-doc {
