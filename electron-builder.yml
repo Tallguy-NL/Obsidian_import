@@ -36,9 +36,14 @@ mac:
   # Signing/notarization are opt-in: they need a Developer ID Application certificate and an
   # Apple ID app-specific password/API key, neither of which belong in this repo. electron-builder
   # picks these up from env vars (CSC_LINK/CSC_KEY_PASSWORD, APPLE_ID/APPLE_APP_SPECIFIC_PASSWORD
-  # or APPLE_API_KEY) when present; unset, it just produces an unsigned build (fine for local use
-  # via right-click → Open, but will show a Gatekeeper warning and can't auto-update).
+  # or APPLE_API_KEY) when present. electron-builder can't be told to sign ad-hoc itself here —
+  # it only auto-falls-back to ad-hoc when the keychain has zero identities, and this Mac has
+  # unrelated self-signed certs in it (mac.fritz.box etc.), so it skips signing entirely instead.
+  # Skipping signing leaves the raw, unsigned Electron placeholder binary in place, which macOS
+  # now rejects outright ("notarization indicates this code has been revoked"), not just warns
+  # about — so scripts/afterSign.js re-signs the packaged bundle ad-hoc by hand.
   identity: null
+afterSign: scripts/afterSign.js
 
 dmg:
   contents:
