@@ -166,11 +166,27 @@ async function processBacklogItem(vault, item, settings) {
   if (doc.status_code === STATUS.FAILED_PERMANENTLY) {
     // Failed MAX_PROCESSING_ATTEMPTS times already (see markDocumentFailed) — never retried
     // again, unlike a single NOT_PROCESSED (400) below, so a genuinely broken file (corrupt,
-    // password-protected, ...) stops being attempted on every future tick forever. Never gets
-    // an ID: line either, so findBacklog() re-discovers it on every scan — logged so a backlog
-    // stuck cycling through a pile of these (silent, no DB write) is visible instead of looking
-    // like a hang.
+    // password-protected, ...) stops being attempted on every future tick forever. Still needs
+    // its own ID: line written to *this* note, though (mirrors the "already processed
+    // elsewhere" branch below) — without one, findBacklog() has no way to tell this embed apart
+    // from a genuinely new one and re-discovers it on every single scan, forever. Observed in
+    // practice: a vault with a large-enough cluster of these can leave the backlog looking
+    // permanently stuck churning through the same handful of failed items without ever reaching
+    // real work behind them, especially with several vaults round-robining for a shared
+    // per-tick budget.
     console.error(`[processBacklogItem] skipping (permanently failed): ${item.resolvedPath}`);
+    const idLinePromise = appendIdLineForExistingAttachment({
+      notePath: item.notePath,
+      guid: doc.guid,
+      originalFilename: item.embedFileName,
+      matchedTags: [],
+      extractedText: doc.error_message ? `(permanently failed: ${doc.error_message})` : '',
+    }).catch((err) => {
+      // Not fatal — findBacklog() just rediscovers this one again next scan, same as before
+      // this fix, rather than the whole tick failing over a single unwritable note.
+      console.error(`[processBacklogItem] failed to record permanent failure in ${item.notePath}: ${err.message}`);
+    });
+    await withTimeout(idLinePromise, FILE_IO_TIMEOUT_MS, `record permanent failure ${item.notePath}`).catch(() => {});
     return { skipped: true, permanentlyFailed: true };
   }
 
