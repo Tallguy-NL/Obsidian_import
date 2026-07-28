@@ -20,7 +20,7 @@ async function ensureDir(dirPath) {
  * destination path.
  */
 async function copyToAttachments(vaultRootPath, sourceFilePath, originalFilename, guid) {
-  const attachmentsDir = path.join(vaultRootPath, resolveAttachmentFolder(vaultRootPath));
+  const attachmentsDir = path.join(vaultRootPath, await resolveAttachmentFolder(vaultRootPath));
   await ensureDir(attachmentsDir);
   const embedFileName = guidSuffixedName(originalFilename, guid);
   const destPath = path.join(attachmentsDir, embedFileName);

@@ -139,7 +139,11 @@ async function findBacklog(vault) {
 async function processBacklogItem(vault, item, settings) {
   let stat;
   try {
-    stat = await fs.promises.stat(item.resolvedPath);
+    // Raced against a deadline too — an unmaterialized sync-drive file can block stat() itself,
+    // before the pipeline's own timeout below even starts.
+    const statPromise = fs.promises.stat(item.resolvedPath);
+    statPromise.catch(() => {});
+    stat = await withTimeout(statPromise, FILE_IO_TIMEOUT_MS, `stat ${item.resolvedPath}`);
   } catch {
     return { skipped: true };
   }

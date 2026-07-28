@@ -40,6 +40,21 @@ const WEEKDAY_LABELS = Object.freeze([
 ]);
 
 const WORKER_TICK_INTERVAL_MS = 20_000;
+// Independent of the tick loop on purpose (see worker/index.js/workerBridge.js) — a stuck
+// backfill item can legitimately keep a single tick running for minutes, but this timer firing
+// at all is what tells the main process the worker's JS event loop isn't wedged, since a truly
+// blocked thread would starve this timer too.
+const HEARTBEAT_INTERVAL_MS = 15_000;
+// Longest a single worker operation (a tick, or the on-demand 'analyze-vault' handler — see
+// worker/index.js's activeOperations) may run before it's treated as wedged and restarted, even
+// though the heartbeat itself is still arriving on schedule (see workerBridge.js's
+// checkHeartbeat()). The heartbeat only proves the worker's event loop isn't frozen — it says
+// nothing about whether the work in flight is making progress, which is exactly the gap that let
+// a full vault rescan with no overall deadline (findBacklog() over tens of thousands of notes)
+// run for two-plus hours undetected. A normal tick finishes in low single-digit seconds even on
+// a large vault, so 10 minutes is already generous slack for one that's merely slow (a big
+// 'analyze-vault' run included) without leaving a genuinely wedged one unrecovered for long.
+const MAX_TICK_DURATION_MS = 600_000; // 10 minutes
 const IMPORT_QUEUE_DRAIN_CAP = 20;
 // Backfill items processed sequentially (never in parallel) per tick. Previously hardcoded to
 // 1, which capped throughput at 1 document per WORKER_TICK_INTERVAL_MS regardless of how much
@@ -78,6 +93,8 @@ module.exports = {
   DEFAULT_SETTINGS,
   WEEKDAY_LABELS,
   WORKER_TICK_INTERVAL_MS,
+  HEARTBEAT_INTERVAL_MS,
+  MAX_TICK_DURATION_MS,
   IMPORT_QUEUE_DRAIN_CAP,
   BACKFILL_ITEMS_PER_TICK,
   ERRORS_SUBFOLDER,

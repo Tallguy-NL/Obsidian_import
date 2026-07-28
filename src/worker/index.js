@@ -3,17 +3,50 @@
 // import folders for new documents (Responsibility A) and advances the existing-vault backfill
 // up to BACKFILL_ITEMS_PER_TICK items, strictly one after another (Responsibility B). Also
 // handles on-demand messages from the main process (pause/resume + settings changes, analyze-vault).
-const { WORKER_TICK_INTERVAL_MS, BACKFILL_ITEMS_PER_TICK } = require('../shared/constants');
+const { WORKER_TICK_INTERVAL_MS, BACKFILL_ITEMS_PER_TICK, HEARTBEAT_INTERVAL_MS } = require('../shared/constants');
 const db = require('./db');
 const { isWorkerAllowedToRunNow } = require('./scheduler');
 const { pollAllVaults } = require('./importPoller');
 const { analyzeVaultTags } = require('./vaultAnalyzer');
 const { findBacklog, processBacklogItem, runBackfillForVault } = require('./backfillScanner');
 const { sweepOrphansForVault } = require('./orphanSweeper');
+const { terminateOcrWorker } = require('./pipeline/ocrEngine');
+const { terminatePdfWorker } = require('./pipeline/pdfExtractor');
 
 let tickInFlight = false;
 const backfillQueues = new Map(); // vaultId -> cached pending backlog items
 let backfillVaultCursor = 0;
+
+// Tracks every long-running operation currently in flight — both tick() and the on-demand
+// 'analyze-vault' handler (its own unbounded runBackfillForVault() loop over up to 10,000 items
+// is exactly the same "no overall deadline" shape as tick()'s backlog scan, and the two can run
+// concurrently) — so the heartbeat below can report how long the *oldest* one has been running.
+// A Map keyed by an opaque id rather than a single shared variable: two operations overlapping
+// and naively sharing one "started at" value would let the second one finish, clear it, and make
+// the main process blind to the first one still being stuck.
+const activeOperations = new Map(); // opId -> startedAt
+let nextOpId = 1;
+
+function beginOperation() {
+  const id = nextOpId;
+  nextOpId += 1;
+  activeOperations.set(id, Date.now());
+  return id;
+}
+
+function endOperation(id) {
+  activeOperations.delete(id);
+}
+
+// Read by the heartbeat below so the main process can tell legitimately-running work apart from
+// work that's stopped making progress — see MAX_TICK_DURATION_MS's comment.
+function oldestOperationStartedAt() {
+  let oldest = null;
+  for (const startedAt of activeOperations.values()) {
+    if (oldest === null || startedAt < oldest) oldest = startedAt;
+  }
+  return oldest;
+}
 
 function postEvent(message) {
   process.parentPort.postMessage(message);
@@ -58,6 +91,7 @@ async function processBackfillBatchAcrossVaults(vaults, settings) {
 async function tick() {
   if (tickInFlight) return; // an earlier tick (e.g. a slow OCR job) is still running
   tickInFlight = true;
+  const opId = beginOperation();
   try {
     const settings = db.getSettings();
     if (settings.workerPaused) return;
@@ -91,8 +125,21 @@ async function tick() {
     console.error('[worker] tick failed:', err);
   } finally {
     tickInFlight = false;
+    endOperation(opId);
   }
 }
+
+// Neither the OCR nor the PDF-extraction child is killed by this process exiting on its own —
+// process.exit() (below) and an external kill() from workerBridge.js both just orphan them
+// (reparented to PID 1), left running forever with no timeout left to ever catch them since the
+// thing that owned that timeout is gone. Every app restart was silently leaking one OCR child,
+// one PDF-extraction child, and that PDF child's own nested OCR grandchild. Registered on
+// `process.on('exit')` (rather than only in the 'shutdown' handler below) so it also runs on a
+// crash or an external kill(), not just a graceful shutdown message.
+process.on('exit', () => {
+  terminateOcrWorker();
+  terminatePdfWorker();
+});
 
 process.parentPort.on('message', async ({ data }) => {
   if (data?.type === 'shutdown') {
@@ -107,6 +154,10 @@ process.parentPort.on('message', async ({ data }) => {
   }
 
   if (data?.type === 'analyze-vault') {
+    // Its own runBackfillForVault() loop (up to 10,000 items, each re-running findBacklog())
+    // has exactly the same "no overall deadline" shape as tick()'s backlog scan — tracked here
+    // too so a stuck "Analyze now" is caught by the same watchdog instead of running invisibly.
+    const opId = beginOperation();
     try {
       const tagResult = await analyzeVaultTags(data.vaultId);
       const vault = db.getVault(data.vaultId);
@@ -121,6 +172,8 @@ process.parentPort.on('message', async ({ data }) => {
       postEvent({ type: 'statsChanged', reason: 'analyze-vault' });
     } catch (err) {
       postEvent({ type: 'analyze-vault-error', vaultId: data.vaultId, error: String(err) });
+    } finally {
+      endOperation(opId);
     }
     return;
   }
@@ -131,3 +184,16 @@ process.parentPort.on('message', async ({ data }) => {
 console.log('[worker] started');
 setInterval(tick, WORKER_TICK_INTERVAL_MS);
 tick();
+
+// Firing is independent of tick()/tickInFlight on purpose — see workerBridge.js's
+// checkHeartbeat(). Stuck work must not stop this from firing (it's the thing that tells the
+// main process the worker's JS event loop itself isn't wedged), which is why it's its own
+// setInterval rather than something posted from inside tick()/the analyze-vault handler. It does
+// carry the oldest in-flight operation's start time, though — heartbeat-alive is necessary but
+// not sufficient, since work stuck on an unguarded/undeadlined await (no in-process timeout ever
+// fires) would keep this timer firing forever while making zero real progress. Reporting it lets
+// the main process restart the worker once something has run implausibly long, independent of
+// whether heartbeats are still arriving.
+setInterval(() => postEvent({
+  type: 'heartbeat', at: Date.now(), tickStartedAt: oldestOperationStartedAt(),
+}), HEARTBEAT_INTERVAL_MS);

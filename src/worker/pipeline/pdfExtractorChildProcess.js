@@ -189,6 +189,13 @@ async function extractPdfTextInner(filePath) {
   }
 }
 
+// worker/index.js dying — for any reason, including a SIGKILL neither side can run cleanup code
+// for — closes this process's IPC channel, which is what actually fires 'disconnect'. Exiting
+// here in turn closes the IPC channel to this process's own nested OCR child (forked by
+// ocrEngine.js above), so its ocrChildProcess.js's identical handler fires too — one disconnect
+// cascades through the whole subtree instead of leaving the nested child orphaned.
+process.on('disconnect', () => process.exit(0));
+
 process.on('message', async ({ id, filePath }) => {
   try {
     const result = await extractPdfTextInner(filePath);

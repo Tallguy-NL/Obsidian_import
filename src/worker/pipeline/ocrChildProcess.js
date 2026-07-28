@@ -32,6 +32,13 @@ function getOcrWorker() {
   return workerPromise;
 }
 
+// The parent (worker/index.js, or pdfExtractorChildProcess.js for the nested OCR case) dying —
+// for any reason, including a SIGKILL neither side can run cleanup code for — closes this
+// process's IPC channel, which is what actually fires 'disconnect'. process.exit() elsewhere
+// only runs on a clean shutdown; this is the one exit path that also covers a crash or an
+// external kill(), which is exactly how this process was ending up orphaned before.
+process.on('disconnect', () => process.exit(0));
+
 process.on('message', async ({ id, input }) => {
   try {
     const worker = await getOcrWorker();

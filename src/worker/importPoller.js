@@ -24,7 +24,13 @@ function cleanTitleFromGroupKey(groupKey) {
 async function listImportCandidates(importFolderPath) {
   let entries;
   try {
-    entries = await fs.promises.readdir(importFolderPath, { withFileTypes: true });
+    // Raced against a deadline like every other fs call in the pipeline (see FILE_IO_TIMEOUT_MS
+    // in vaultAnalyzer.js's walkFiles) — an import folder on a sync drive whose listing isn't
+    // fully materialized yet can block readdir() indefinitely, which would otherwise wedge the
+    // tick loop before any per-file timeout downstream even starts.
+    const readdirPromise = fs.promises.readdir(importFolderPath, { withFileTypes: true });
+    readdirPromise.catch(() => {});
+    entries = await withTimeout(readdirPromise, FILE_IO_TIMEOUT_MS, `listImportCandidates ${importFolderPath}`);
   } catch (err) {
     if (err.code === 'ENOENT') return [];
     throw err;
@@ -118,7 +124,11 @@ async function processOneFile({ vault, fileName, groupKey, imageTypesEnabled, kn
 
   let stat;
   try {
-    stat = await fs.promises.stat(sourcePath);
+    // Raced against a deadline too — an unmaterialized sync-drive file can block stat() itself,
+    // before the pipeline's own timeout below even starts.
+    const statPromise = fs.promises.stat(sourcePath);
+    statPromise.catch(() => {});
+    stat = await withTimeout(statPromise, FILE_IO_TIMEOUT_MS, `stat ${sourcePath}`);
   } catch (err) {
     // File vanished between listing and processing (e.g. user moved it away) — nothing to do.
     return { skipped: true };

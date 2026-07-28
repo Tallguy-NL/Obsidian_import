@@ -71,7 +71,7 @@ async function upsertNoteForAttachment({ vaultRootPath, title, embedFileName, gu
   // New notes land wherever Obsidian's own "Default location for new notes" setting
   // (.obsidian/app.json) says, so this follows the user's actual configured folder instead of
   // a guess baked into this app — including automatically if they ever repoint it.
-  const noteFolder = resolveNewNoteFolder(vaultRootPath);
+  const noteFolder = await resolveNewNoteFolder(vaultRootPath);
   const notePath = path.join(vaultRootPath, noteFolder, fileName);
   await fs.promises.mkdir(path.dirname(notePath), { recursive: true });
   const existing = await readNoteIfExists(notePath);

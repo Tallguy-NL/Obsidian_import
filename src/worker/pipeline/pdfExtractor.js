@@ -21,7 +21,13 @@ const pending = new Map(); // requestId -> {resolve, reject}
  * same-process timeout — the same reasoning ocrEngine.js already applies to tesseract.
  */
 function spawnChild() {
-  const proc = fork(CHILD_ENTRY, [], { stdio: 'pipe' });
+  // `detached: true` makes this child the leader of its own process group rather than sharing
+  // the worker's — pdfExtractorChildProcess.js forks its own nested OCR child for scanned-PDF
+  // pages (see ocrEngine.js/ocrChildProcess.js), which inherits this new group. Killing by group
+  // (see killChild below) then takes both processes out atomically; killing just this PID would
+  // leave that nested OCR child orphaned and un-managed the moment this one dies, since a plain
+  // process.exit()/SIGKILL never cascades to grandchildren on its own.
+  const proc = fork(CHILD_ENTRY, [], { stdio: 'pipe', detached: true });
 
   proc.on('message', ({ id, ok, result, error }) => {
     const waiter = pending.get(id);
@@ -52,6 +58,21 @@ function getChild() {
   return child;
 }
 
+// Targets the whole process group (negative pid) rather than just this one process, so the
+// nested OCR child this process may itself have forked (see spawnChild's `detached: true`
+// comment) dies with it instead of surviving as an unreachable orphan. Group kill is POSIX-only
+// (throws on Windows, where electron-builder.yml still ships an nsis target) — proc.kill() below
+// always runs too, so the direct child is still reaped there even though the nested grandchild
+// wouldn't be (see pdfExtractorChildProcess.js's own `disconnect` handler for that case instead).
+function killChildGroup(proc) {
+  try {
+    process.kill(-proc.pid, 'SIGKILL');
+  } catch {
+    // not supported (Windows), or the group is already gone — fall through to the direct kill
+  }
+  proc.kill('SIGKILL'); // safe/no-op if already dead
+}
+
 // pdf.js's Node/worker-thread misdetection (see pdfExtractorChildProcess.js) makes a wedged
 // render or parse indistinguishable from a slow one — this timeout is the backstop against a
 // single bad PDF freezing the whole worker tick loop forever. Logged before starting so the
@@ -75,10 +96,17 @@ async function extractPdfText(filePath) {
       console.error(`[pdfExtractor] ${err.message} — killing wedged PDF extraction child process`);
       pending.delete(id);
       if (child === proc) child = null;
-      proc.kill('SIGKILL'); // SIGTERM assumes the process can still respond; a wedged one can't.
+      killChildGroup(proc); // SIGTERM assumes the process can still respond; a wedged one can't.
     }
     throw err;
   }
 }
 
-module.exports = { extractPdfText };
+async function terminatePdfWorker() {
+  if (!child) return;
+  const proc = child;
+  child = null;
+  killChildGroup(proc); // no in-flight request to wait on gracefully, same reasoning as above
+}
+
+module.exports = { extractPdfText, terminatePdfWorker };

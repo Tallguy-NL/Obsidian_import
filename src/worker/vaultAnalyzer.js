@@ -17,7 +17,14 @@ async function walkFiles(rootPath, predicate) {
   async function walk(dir) {
     let entries;
     try {
-      entries = await fs.promises.readdir(dir, { withFileTypes: true });
+      // Raced against a deadline like every other fs call in the pipeline (see
+      // FILE_IO_TIMEOUT_MS) — a directory on a sync drive (iCloud Drive, OneDrive, ...) whose
+      // listing isn't fully materialized yet can block readdir() indefinitely, which would
+      // otherwise wedge this whole recursive walk (and, since findBacklog()/analyzeVaultTags()
+      // call it before any per-item timeout even starts, the entire tick loop) forever.
+      const readdirPromise = fs.promises.readdir(dir, { withFileTypes: true });
+      readdirPromise.catch(() => {});
+      entries = await withTimeout(readdirPromise, FILE_IO_TIMEOUT_MS, `walkFiles readdir ${dir}`);
     } catch {
       return;
     }
