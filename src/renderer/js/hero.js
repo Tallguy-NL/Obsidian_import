@@ -1,3 +1,5 @@
+document.getElementById('appVersion').textContent = `v${window.api.appVersion}`;
+
 const vaultCardsEl = document.getElementById('vaultCards');
 const pauseResumeBtn = document.getElementById('pauseResumeBtn');
 const pulseDotEl = document.getElementById('pulseDot');

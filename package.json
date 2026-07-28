@@ -1,6 +1,6 @@
 {
   "name": "obsidian-importer",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "Background importer that ingests documents into an Obsidian vault, extracts text via OCR, and auto-tags notes.",
   "main": "src/main/index.js",
   "private": true,

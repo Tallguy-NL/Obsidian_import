@@ -1,7 +1,10 @@
 const { contextBridge, ipcRenderer } = require('electron');
 const { IPC } = require('../shared/ipcChannels');
+const { version: appVersion } = require('../../package.json');
 
 contextBridge.exposeInMainWorld('api', {
+  appVersion,
+
   pickFolder: () => ipcRenderer.invoke(IPC.PICK_FOLDER),
   listSubfolders: (parentPath) => ipcRenderer.invoke(IPC.LIST_SUBFOLDERS, parentPath),
 

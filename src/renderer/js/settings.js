@@ -4,6 +4,8 @@
 const IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'bmp', 'gif', 'webp', 'heic', 'heif'];
 const WEEKDAY_LABELS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
+document.getElementById('appVersion').textContent = `v${window.api.appVersion}`;
+
 let vaults = [];
 let settings = null;
 let pendingParentPath = null;
