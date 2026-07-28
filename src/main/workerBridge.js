@@ -79,11 +79,17 @@ class WorkerBridge {
       if (message?.type === 'heartbeat') {
         this.lastHeartbeatAt = message.at;
         this.tickStartedAt = message.tickStartedAt;
-        // watchdogRestartAttempts is deliberately NOT reset here — a stuck-tick hang still
-        // heartbeats normally every HEARTBEAT_INTERVAL_MS (see MAX_TICK_DURATION_MS's comment),
-        // so resetting on every heartbeat would let checkHeartbeat() restart the same wedged
-        // worker forever instead of ever hitting MAX_WATCHDOG_RESTARTS. It's reset instead in
-        // checkHeartbeat() itself, only once both checks are actually healthy.
+        // Only a null tickStartedAt — the worker reporting nothing in flight at all — proves an
+        // operation actually finished on its own since the last restart, so only that resets
+        // watchdogRestartAttempts. A restart always lands the new worker straight back into the
+        // same empty-cache findBacklog() scan that triggered it (backfillQueues doesn't survive
+        // a restart), so its tickStartedAt looks "young" moments later — young is NOT evidence of
+        // recovery, it's what every restart looks like right before running into the exact same
+        // wall again. Resetting on that (as this used to) would zero the counter every time,
+        // making MAX_WATCHDOG_RESTARTS impossible to ever reach: restart, look briefly young,
+        // reset, get stuck again, restart, forever — worse than the hang this exists to fix,
+        // because it never lets a merely-slow scan run long enough to finish either.
+        if (this.tickStartedAt === null) this.watchdogRestartAttempts = 0;
         return;
       }
       if (message?.type === 'processingStatusChanged') {
@@ -144,10 +150,7 @@ class WorkerBridge {
     const heartbeatStale = staleFor >= HEARTBEAT_STALE_THRESHOLD_MS;
     const tickDuration = this.tickStartedAt ? Date.now() - this.tickStartedAt : 0;
     const tickStuck = tickDuration >= MAX_TICK_DURATION_MS;
-    if (!heartbeatStale && !tickStuck) {
-      this.watchdogRestartAttempts = 0; // both checks healthy — a genuine recovery, not just a lull
-      return;
-    }
+    if (!heartbeatStale && !tickStuck) return;
     if (this.watchdogRestartAttempts >= MAX_WATCHDOG_RESTARTS) {
       const reason = heartbeatStale ? `heartbeat stale for ${staleFor}ms` : `tick running for ${tickDuration}ms`;
       this.logWatchdogEvent(`worker ${reason} but max watchdog restarts reached, giving up`);
