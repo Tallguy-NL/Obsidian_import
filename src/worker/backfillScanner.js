@@ -144,7 +144,12 @@ async function processBacklogItem(vault, item, settings) {
     const statPromise = fs.promises.stat(item.resolvedPath);
     statPromise.catch(() => {});
     stat = await withTimeout(statPromise, FILE_IO_TIMEOUT_MS, `stat ${item.resolvedPath}`);
-  } catch {
+  } catch (err) {
+    // Silent otherwise — a backlog stuck entirely on items that all fail here (a stale
+    // resolvedPath, a permissions issue, a sync-drive stall past FILE_IO_TIMEOUT_MS) would
+    // burn through ticks with zero log output and zero DB writes, indistinguishable from a
+    // genuine hang from the outside.
+    console.error(`[processBacklogItem] skipping (stat failed): ${item.resolvedPath}: ${err.message}`);
     return { skipped: true };
   }
 
@@ -161,7 +166,11 @@ async function processBacklogItem(vault, item, settings) {
   if (doc.status_code === STATUS.FAILED_PERMANENTLY) {
     // Failed MAX_PROCESSING_ATTEMPTS times already (see markDocumentFailed) — never retried
     // again, unlike a single NOT_PROCESSED (400) below, so a genuinely broken file (corrupt,
-    // password-protected, ...) stops being attempted on every future tick forever.
+    // password-protected, ...) stops being attempted on every future tick forever. Never gets
+    // an ID: line either, so findBacklog() re-discovers it on every scan — logged so a backlog
+    // stuck cycling through a pile of these (silent, no DB write) is visible instead of looking
+    // like a hang.
+    console.error(`[processBacklogItem] skipping (permanently failed): ${item.resolvedPath}`);
     return { skipped: true, permanentlyFailed: true };
   }
 
@@ -175,6 +184,10 @@ async function processBacklogItem(vault, item, settings) {
       // reuse its GUID/tags and just add the missing ID: line to *this* note, rather than
       // re-matching tags (and rather than leaving this note stuck in the backlog forever). Text
       // is cheap to re-extract (nothing else needs it) so this note still gets its own callout.
+      // Only touches the note file, never `documents` (the row already exists) — logged so a
+      // backlog dominated by these (a file embedded in many notes) doesn't look like zero
+      // progress just because DB timestamps alone wouldn't show it moving.
+      console.log(`[processBacklogItem] reusing existing extraction for ${item.notePath}: ${item.resolvedPath}`);
       const matchedTags = db.getDocumentTagNames(doc.id);
       const reExtractPromise = (async () => {
         const { text } = await extractText(item.resolvedPath, settings.imageTypesEnabled).catch(() => ({ text: '' }));

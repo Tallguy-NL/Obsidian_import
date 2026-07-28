@@ -1,4 +1,4 @@
-const { app } = require('electron');
+const { app, powerSaveBlocker } = require('electron');
 const { createMainWindow, getMainWindow } = require('./windowManager');
 const { createTray, refreshMenu } = require('./tray');
 const { WorkerBridge } = require('./workerBridge');
@@ -21,6 +21,18 @@ app.on('before-quit', () => {
 });
 
 app.whenReady().then(() => {
+  // This is a tray-resident background importer with no window open most of the time — exactly
+  // the profile macOS (and, independently, Chromium's own backgrounded-process scheduling)
+  // deprioritizes once it's not the focused/frontmost app: both the main process and the worker
+  // utilityProcess were directly observed running at a reduced OS scheduling priority (`nice 5`,
+  // via `ps`) while the app sat fully idle mid-tick for 12+ minutes — well past every in-process
+  // timeout and even past this app's own 10-minute worker-restart watchdog, because that
+  // watchdog's own setInterval lives in this same deprioritized main process and was starved
+  // right along with everything else. No in-process fix can compensate for the OS declining to
+  // schedule the process at all; this is the one thing that addresses that directly, by holding
+  // a system assertion that tells macOS not to nap this app while it's running.
+  powerSaveBlocker.start('prevent-app-suspension');
+
   const workerBridge = new WorkerBridge();
   workerBridge.start();
 
