@@ -18,7 +18,16 @@ const pending = new Map(); // requestId -> {resolve, reject}
  * which requires a process boundary, not just a thread one.
  */
 function spawnChild() {
-  const proc = fork(CHILD_ENTRY, [], { stdio: 'pipe' });
+  // Default child_process IPC serialization is 'json' — Buffer.toJSON()'s {type:'Buffer',
+  // data:[...]} shape makes a Buffer *look* JSON-safe going out, but Node's 'json' deserializer
+  // does not reverse that on the receiving end. ocrImage() below sends a real Buffer whenever
+  // the input is a rendered PDF page or a HEIC-converted JPEG (see pdfExtractorChildProcess.js/
+  // heicConvert.js) — ocrChildProcess.js would receive a plain {type:'Buffer', data:[...]}
+  // object instead, which tesseract/leptonica can't read, surfacing as "Image file /input
+  // cannot be read!" on files that are actually fine. 'advanced' serialization (V8's own, which
+  // does understand Buffer/TypedArray) is what actually round-trips it correctly. Plain
+  // filePath strings (direct, non-HEIC image OCR) were never affected — only the Buffer path.
+  const proc = fork(CHILD_ENTRY, [], { stdio: 'pipe', serialization: 'advanced' });
 
   proc.on('message', ({ id, ok, text, error }) => {
     const waiter = pending.get(id);
